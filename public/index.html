@@ -292,14 +292,19 @@
       });
     }
 
-    function refreshAllData() {
-      return Promise.all([
+    async function refreshAllData() {
+      await Promise.all([
         refreshDashboardState(),
         refreshChats(),
         refreshContacts(),
         refreshOrdersAndLeads(),
         refreshProductsPreview()
       ]);
+      try {
+        await refreshActiveChat();
+      } catch (e) {
+        setTopMessage(`Chat panel refresh warning: ${e.message}`);
+      }
     }
 
     function setAutoRefresh(enabled) {
@@ -440,7 +445,12 @@
       state.chats = data.conversations || [];
       renderChats();
       if (!state.activeJid && state.chats.length) state.activeJid = state.chats[0].jid;
-      if (state.activeJid) await selectChat(state.activeJid, false);
+    }
+
+    async function refreshActiveChat() {
+      if (!state.activeJid && state.chats.length) state.activeJid = state.chats[0].jid;
+      if (!state.activeJid) return;
+      await selectChat(state.activeJid, false);
     }
 
     async function selectChat(jid, rerenderList = true) {
