@@ -944,9 +944,9 @@ app.post('/api/admin/products/upload', writeRateLimiter, productsCsvUpload.singl
     }
 
     try {
+        const parsedProducts = await parseProductsCsvStream(Readable.from([content]));
         fs.writeFileSync(CSV_FILE, content.endsWith('\n') ? content : `${content}\n`);
-        await parseProductsCsvStream(Readable.from([content]));
-        await loadProducts();
+        products = parsedProducts;
         return res.json({ message: 'Products CSV uploaded successfully.', products: products.length });
     } catch (error) {
         return res.status(500).json({ error: error.message || 'Failed to import products CSV.' });
