@@ -453,61 +453,61 @@ async function generateOpenAIReply(userText) {
         console.error('❌ OpenAI response failed:', error?.message || error);
         return null;
     }
+}
 
-    async function generateAICoachReply(userMessage, history = []) {
-        const prompt = String(userMessage || '').trim();
-        if (!prompt) return null;
+async function generateAICoachReply(userMessage, history = []) {
+    const prompt = String(userMessage || '').trim();
+    if (!prompt) return null;
 
-        if (openaiClient) {
-            try {
-                const safeHistory = Array.isArray(history)
-                    ? history
-                        .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
-                        .slice(-6)
-                        .map((item) => ({
-                            role: item.role,
-                            content: String(item.content || '').slice(0, 800)
-                        }))
-                    : [];
-                const completion = await openaiClient.chat.completions.create({
-                    model: OPENAI_MODEL,
-                    messages: [
-                        {
-                            role: 'system',
-                            content: [
-                                'You are an expert WhatsApp sales and support coach for a business admin.',
-                                'Help the admin plan responses to clients.',
-                                'Be practical, concise, and action-oriented.',
-                                'Return clear sections: "Suggested Reply", "Why this works", and "Next question to ask".',
-                                'Respect these active teaching rules and tone preferences:',
-                                buildOpenAISystemPrompt()
-                            ].join('\n')
-                        },
-                        ...safeHistory,
-                        { role: 'user', content: prompt.slice(0, 1200) }
-                    ],
-                    max_tokens: 400
-                });
-                const reply = completion.choices?.[0]?.message?.content?.trim();
-                if (reply) return reply;
-            } catch (error) {
-                console.error('⚠️ AI coach fallback due to OpenAI error:', error?.message || error);
-            }
+    if (openaiClient) {
+        try {
+            const safeHistory = Array.isArray(history)
+                ? history
+                    .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
+                    .slice(-6)
+                    .map((item) => ({
+                        role: item.role,
+                        content: String(item.content || '').slice(0, 800)
+                    }))
+                : [];
+            const completion = await openaiClient.chat.completions.create({
+                model: OPENAI_MODEL,
+                messages: [
+                    {
+                        role: 'system',
+                        content: [
+                            'You are an expert WhatsApp sales and support coach for a business admin.',
+                            'Help the admin plan responses to clients.',
+                            'Be practical, concise, and action-oriented.',
+                            'Return clear sections: "Suggested Reply", "Why this works", and "Next question to ask".',
+                            'Respect these active teaching rules and tone preferences:',
+                            buildOpenAISystemPrompt()
+                        ].join('\n')
+                    },
+                    ...safeHistory,
+                    { role: 'user', content: prompt.slice(0, 1200) }
+                ],
+                max_tokens: 400
+            });
+            const reply = completion.choices?.[0]?.message?.content?.trim();
+            if (reply) return reply;
+        } catch (error) {
+            console.error('⚠️ AI coach fallback due to OpenAI error:', error?.message || error);
         }
-
-        return [
-            '*Suggested Reply*',
-            `Thanks for your message. ${prompt ? 'Based on what you shared, ' : ''}I can help with pricing and next steps right away.`,
-            '',
-            '*Why this works*',
-            '- Confirms the customer is heard',
-            '- Keeps your tone helpful and professional',
-            '- Moves the conversation toward a clear action',
-            '',
-            '*Next question to ask*',
-            'Can you share quantity, size, and deadline so I can give you an accurate quote?'
-        ].join('\n');
     }
+
+    return [
+        '*Suggested Reply*',
+        `Thanks for your message. ${prompt ? 'Based on what you shared, ' : ''}I can help with pricing and next steps right away.`,
+        '',
+        '*Why this works*',
+        '- Confirms the customer is heard',
+        '- Keeps your tone helpful and professional',
+        '- Moves the conversation toward a clear action',
+        '',
+        '*Next question to ask*',
+        'Can you share quantity, size, and deadline so I can give you an accurate quote?'
+    ].join('\n');
 }
 
 async function startBot(fingerprintIndex = 0) {

@@ -382,7 +382,7 @@
         el('contactsPanel').textContent = 'No contacts yet.';
         return;
       }
-      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone || phoneFromJid(contact.jid)} | ${contact.jid}`).join('\\n');
+      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone || phoneFromJid(contact.jid)} | ${contact.jid}`).join('\n');
       el('contactsPanel').textContent = rows;
     }
 
@@ -509,7 +509,7 @@
         const data = await getJson('/api/ai/coach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, history: state.coachHistory })
+          body: JSON.stringify({ message, history: state.coachHistory.slice(0, -1) })
         });
         const reply = String(data.reply || '').trim();
         if (reply) {
