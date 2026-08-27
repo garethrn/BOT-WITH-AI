@@ -331,7 +331,8 @@ app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (re
     }
 
     const fileContent = fs.readFileSync(safePath, 'utf8');
-    const result = importBackup(req.file.originalname, fileContent);
+    const trainerName = String(req.body?.trainerName || '').trim();
+    const result = importBackup(req.file.originalname, fileContent, { trainerName });
     res.json({
         message: 'Backup uploaded and imported for AI learning.',
         ...result

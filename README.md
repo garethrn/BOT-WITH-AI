@@ -9,6 +9,7 @@ This repository now contains the **MY WHATSAPP BOT** build with added AI-oriente
 - Upload/import section for WhatsApp backup files so the bot can learn response rules
 - Teaching section to provide guidance for how the bot and OpenAI should answer
 - OpenAI response generation fallback using dashboard direction and imported learning rules
+- Auto-learning support for WhatsApp chat export format using your name in the transcript
 - "Connect to Meta later" section to save future legal WhatsApp Business integration details
 
 ## Run
@@ -89,10 +90,14 @@ In Railway logs, confirm startup messages similar to:
 
 ### 10) Implement AI learning from backups
 1. In dashboard **Import WhatsApp Backups for Learning**, upload `.txt`, `.csv`, or `.json`.
-2. Add training lines in backup content such as:
+2. Optional: set **Your name in the chat export** so the bot learns from your own replies in transcript format.
+3. Add training lines in backup content such as:
    - `hello => Hi! How can I help?`
    - `Q:delivery|A:Delivery takes 2 days`
-3. Submit upload to import rules into bot learning storage.
+4. You can also upload WhatsApp export style lines such as:
+   - `12/1/25, 9:10 PM - Customer: Hi`
+   - `12/1/25, 9:11 PM - Gareth: Hello! How can I help?`
+5. Submit upload to import rules into bot learning storage.
 
 ### 11) Teach response behavior
 1. In dashboard **Teach AI Behavior**, enter instruction text.
@@ -123,6 +128,10 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 
 `/api/dashboard/state` includes an `openai` object showing whether OpenAI is enabled and which model is active.
 
+`POST /api/ai/upload-backup` accepts multipart fields:
+- `backup` (file, required)
+- `trainerName` (optional, used to extract your responses from WhatsApp transcript exports)
+
 ### 14) Operational notes
 - Keep `ADMIN_API_TOKEN` enabled in production.
 - Keep Railway volume mounted to avoid losing auth and learning state.
@@ -144,6 +153,6 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `GET /dashboard` – web dashboard
 - `GET /qr` – current login QR (when available)
 - `GET /api/dashboard/state` – bot + learning state
-- `POST /api/ai/upload-backup` – upload backup file (`backup` field)
+- `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
 - `POST /api/meta/connect-later` – store future Meta connection intent
