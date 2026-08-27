@@ -19,10 +19,10 @@
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b1220,#111a2d); color: var(--text); }
     .wrap { max-width: 1360px; margin: 0 auto; padding: 18px; }
-    .top { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+    .top { position: sticky; top: 0; z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .badge { padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font-size: 13px; }
-    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 12px; min-height: 560px; }
+    .grid { display: grid; grid-template-columns: 340px 1fr; gap: 12px; min-height: 560px; }
     .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .panel h2 { margin: 0; font-size: 16px; }
     .head { padding: 12px; border-bottom: 1px solid var(--line); background: #0f1727; }
@@ -53,7 +53,21 @@
     .coach-msg.user { background:#1e293b; }
     .coach-msg.assistant { background:#0f766e; }
     .muted { color: var(--muted); font-size: 12px; }
-    @media (max-width: 980px) { .grid,.two { grid-template-columns: 1fr; } }
+    .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
+    .tab-btn { background: #0f172a; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; white-space: nowrap; }
+    .tab-btn.active { border-color: var(--brand); background: #12314a; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .pill-toggle { display: inline-flex; align-items: center; gap: 8px; }
+    .pill-toggle input { accent-color: var(--brand); }
+    .top .row + .row { margin-top: 10px; }
+    @media (max-width: 980px) {
+      .grid,.two { grid-template-columns: 1fr; }
+      .wrap { padding: 10px; }
+      .top { position: static; padding: 12px; }
+      .messages { height: 360px; }
+      input, textarea, button, select { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -73,6 +87,12 @@
       <div class="row" style="margin-top:10px;">
         <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="min-width:260px;">
         <button id="refreshAll">Refresh</button>
+        <label class="badge pill-toggle"><input id="autoRefreshToggle" type="checkbox"> Auto Refresh</label>
+        <select id="autoRefreshInterval">
+          <option value="15000">15s</option>
+          <option value="30000" selected>30s</option>
+          <option value="60000">60s</option>
+        </select>
         <button id="pauseGlobal" class="btn-danger">Pause Bot</button>
         <button id="resumeGlobal" class="btn-ok">Resume Bot</button>
         <button id="logoutWhatsapp" class="btn-danger">Logout WhatsApp</button>
@@ -80,6 +100,14 @@
       <div id="topMessage" class="mini" style="margin-top:8px;"></div>
     </div>
 
+    <div class="tabs" id="tabsNav">
+      <button class="tab-btn active" data-tab="conversations" type="button">Conversations</button>
+      <button class="tab-btn" data-tab="ai" type="button">AI & Learning</button>
+      <button class="tab-btn" data-tab="crm" type="button">CRM</button>
+      <button class="tab-btn" data-tab="products" type="button">Products</button>
+    </div>
+
+    <section class="tab-panel active" data-tab-panel="conversations">
     <div class="grid">
       <div class="panel">
         <div class="head"><h2>Conversations</h2></div>
@@ -106,6 +134,7 @@
               <button id="moveTabBtn">Move</button>
               <button id="pauseChat" class="btn-danger">Pause Chat</button>
               <button id="resumeChat" class="btn-ok">Resume Chat</button>
+              <button id="scrollLatest" type="button">Latest</button>
             </div>
           </div>
         </div>
@@ -118,7 +147,9 @@
         </div>
       </div>
     </div>
+    </section>
 
+    <section class="tab-panel" data-tab-panel="ai">
     <div class="sections">
       <div class="section two">
         <div>
@@ -139,6 +170,7 @@
             <button type="submit">Ask AI Coach</button>
           </form>
           <button id="saveCoachAsTeaching" type="button">Save Last Coach Reply to Teachings</button>
+          <button id="clearCoachChat" type="button">Clear Coach Chat</button>
           <div id="coachResult" class="mini"></div>
           <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
           <h3>Manual Teach AI Behavior</h3>
@@ -170,7 +202,11 @@
           <pre id="summaryPreview">[]</pre>
         </div>
       </div>
+    </div>
+    </section>
 
+    <section class="tab-panel" data-tab-panel="crm">
+    <div class="sections">
       <div class="section two">
         <div>
           <h3>Contacts</h3>
@@ -192,7 +228,11 @@
           <pre id="leadsPanel">[]</pre>
         </div>
       </div>
+    </div>
+    </section>
 
+    <section class="tab-panel" data-tab-panel="products">
+    <div class="sections">
       <div class="section two">
         <div>
           <h3>Products CSV (Catalog)</h3>
@@ -211,11 +251,13 @@
         </div>
       </div>
     </div>
+    </section>
   </div>
 
   <script>
     const el = (id) => document.getElementById(id);
-    const state = { activeJid: '', chats: [], coachHistory: [], lastCoachReply: '' };
+    const state = { activeJid: '', chats: [], coachHistory: [], lastCoachReply: '', activeTab: 'conversations' };
+    let autoRefreshTimer = null;
 
     async function apiFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -238,6 +280,42 @@
     }
 
     function setTopMessage(msg) { el('topMessage').textContent = msg || ''; }
+
+    function switchTab(tabName) {
+      state.activeTab = tabName;
+      localStorage.setItem('dashboardActiveTab', tabName);
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.dataset.tabPanel === tabName);
+      });
+    }
+
+    function refreshAllData() {
+      return Promise.all([
+        refreshDashboardState(),
+        refreshChats(),
+        refreshContacts(),
+        refreshOrdersAndLeads(),
+        refreshProductsPreview()
+      ]);
+    }
+
+    function setAutoRefresh(enabled) {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      if (!enabled) return;
+      const ms = parseInt(el('autoRefreshInterval').value, 10) || 30000;
+      autoRefreshTimer = setInterval(async () => {
+        try {
+          await refreshAllData();
+          renderCoachMessages();
+        } catch {}
+      }, ms);
+    }
 
     function phoneFromJid(jid) {
       const local = String(jid || '').split('@')[0].split(':')[0];
@@ -422,13 +500,19 @@
 
     el('refreshAll').onclick = async () => {
       try {
-        await refreshDashboardState();
-        await refreshChats();
+        await refreshAllData();
         setTopMessage('Refreshed');
       } catch (e) { setTopMessage(e.message); }
     };
     el('apiToken').addEventListener('input', updateQrLink);
     el('chatSearch').addEventListener('input', renderChats);
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    el('autoRefreshToggle').addEventListener('change', () => setAutoRefresh(el('autoRefreshToggle').checked));
+    el('autoRefreshInterval').addEventListener('change', () => {
+      if (el('autoRefreshToggle').checked) setAutoRefresh(true);
+    });
 
     el('pauseGlobal').onclick = async () => {
       try { await postAction('/api/admin/pause'); } catch (e) { setTopMessage(e.message); }
@@ -541,6 +625,12 @@
         el('coachResult').textContent = e.message;
       }
     });
+    el('clearCoachChat').addEventListener('click', () => {
+      state.coachHistory = [];
+      state.lastCoachReply = '';
+      renderCoachMessages();
+      el('coachResult').textContent = 'Coach chat cleared.';
+    });
 
     el('metaForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -620,15 +710,17 @@
         el('productsResult').textContent = e.message;
       }
     });
+    el('scrollLatest').addEventListener('click', () => {
+      const box = el('messages');
+      box.scrollTop = box.scrollHeight;
+    });
 
     (async () => {
       try {
+        const savedTab = localStorage.getItem('dashboardActiveTab');
+        if (savedTab) switchTab(savedTab);
         updateQrLink();
-        await refreshDashboardState();
-        await refreshChats();
-        await refreshContacts();
-        await refreshOrdersAndLeads();
-        await refreshProductsPreview();
+        await refreshAllData();
         renderCoachMessages();
       } catch (e) {
         setTopMessage(e.message.includes('Unauthorized') ? 'Unauthorized. Enter ADMIN_API_TOKEN.' : e.message);
