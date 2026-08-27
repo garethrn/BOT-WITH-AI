@@ -268,6 +268,10 @@ function logChatMessage(jid, role, text) {
     const cleanJid = String(jid || '').trim();
     const cleanText = String(text || '').replace(/\s+/g, ' ').trim();
     if (!cleanJid || !cleanText) return;
+    if (cleanJid.endsWith('@status')) return;
+    if (cleanText === '[non-text message]') return;
+    if (cleanText.startsWith('Status:')) return;
+    if (!cleanJid.includes('@s.whatsapp.net') && !cleanJid.includes('@lid')) return;
 
     const existing = chatLog.get(cleanJid) || [];
     existing.push({
@@ -334,6 +338,18 @@ function normalizeToJid(value) {
     return digits ? `${digits}@s.whatsapp.net` : '';
 }
 
+function extractPhoneDigits(value) {
+    const input = String(value || '').trim();
+    if (!input) return '';
+    const localPart = input.split('@')[0].split(':')[0];
+    return localPart.replace(/[^\d]/g, '');
+}
+
+function phoneFromJid(jid) {
+    const digits = extractPhoneDigits(jid);
+    return digits ? `+${digits}` : '';
+}
+
 function parseContactsFromText(text) {
     const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const results = [];
@@ -388,6 +404,7 @@ function getConversationSummaries() {
         const last = messages[messages.length - 1];
         summaries.push({
             jid,
+            phone: phoneFromJid(jid),
             name: contactNames[jid] || '',
             lastMessage: last?.text || '',
             lastRole: last?.role || '',
@@ -435,6 +452,61 @@ async function generateOpenAIReply(userText) {
     } catch (error) {
         console.error('❌ OpenAI response failed:', error?.message || error);
         return null;
+    }
+
+    async function generateAICoachReply(userMessage, history = []) {
+        const prompt = String(userMessage || '').trim();
+        if (!prompt) return null;
+
+        if (openaiClient) {
+            try {
+                const safeHistory = Array.isArray(history)
+                    ? history
+                        .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
+                        .slice(-6)
+                        .map((item) => ({
+                            role: item.role,
+                            content: String(item.content || '').slice(0, 800)
+                        }))
+                    : [];
+                const completion = await openaiClient.chat.completions.create({
+                    model: OPENAI_MODEL,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: [
+                                'You are an expert WhatsApp sales and support coach for a business admin.',
+                                'Help the admin plan responses to clients.',
+                                'Be practical, concise, and action-oriented.',
+                                'Return clear sections: "Suggested Reply", "Why this works", and "Next question to ask".',
+                                'Respect these active teaching rules and tone preferences:',
+                                buildOpenAISystemPrompt()
+                            ].join('\n')
+                        },
+                        ...safeHistory,
+                        { role: 'user', content: prompt.slice(0, 1200) }
+                    ],
+                    max_tokens: 400
+                });
+                const reply = completion.choices?.[0]?.message?.content?.trim();
+                if (reply) return reply;
+            } catch (error) {
+                console.error('⚠️ AI coach fallback due to OpenAI error:', error?.message || error);
+            }
+        }
+
+        return [
+            '*Suggested Reply*',
+            `Thanks for your message. ${prompt ? 'Based on what you shared, ' : ''}I can help with pricing and next steps right away.`,
+            '',
+            '*Why this works*',
+            '- Confirms the customer is heard',
+            '- Keeps your tone helpful and professional',
+            '- Moves the conversation toward a clear action',
+            '',
+            '*Next question to ask*',
+            'Can you share quantity, size, and deadline so I can give you an accurate quote?'
+        ].join('\n');
     }
 }
 
@@ -528,7 +600,9 @@ async function startBot(fingerprintIndex = 0) {
                     ''
                 ).trim();
                 const normalizedText = text.toLowerCase();
-                logChatMessage(jid, 'user', text || '[non-text message]');
+                if (text) {
+                    logChatMessage(jid, 'user', text);
+                }
 
                 if (jid === ADMIN_JID && msg.message.documentMessage) {
                     try {
@@ -814,6 +888,7 @@ app.get('/api/admin/chats/:jid', readRateLimiter, (req, res) => {
     if (!jid) return res.status(400).json({ error: 'Missing jid.' });
     res.json({
         jid,
+        phone: phoneFromJid(jid),
         name: contactNames[jid] || '',
         paused: pausedChats.has(jid),
         status: conversationStatusForJid(jid),
@@ -891,7 +966,7 @@ app.get('/api/admin/contacts', readRateLimiter, (_req, res) => {
     const contacts = Array.from(jidSet).map((jid) => ({
         jid,
         name: contactNames[jid] || '',
-        phone: jid.replace('@s.whatsapp.net', '')
+        phone: phoneFromJid(jid)
     })).sort((a, b) => a.jid.localeCompare(b.jid));
     res.json({ contacts });
 });
@@ -1023,6 +1098,25 @@ app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
         message: 'Teaching instructions saved.',
         ...result
     });
+});
+
+app.post('/api/ai/coach', writeRateLimiter, async (req, res) => {
+    const message = String(req.body?.message || '').trim();
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+
+    if (!message) {
+        return res.status(400).json({ error: 'message is required.' });
+    }
+
+    try {
+        const reply = await generateAICoachReply(message, history);
+        return res.json({
+            message: 'AI coach response generated.',
+            reply
+        });
+    } catch (error) {
+        return res.status(500).json({ error: 'Failed to generate AI coach response.' });
+    }
 });
 
 app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {

@@ -286,6 +286,7 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `GET /api/admin/products/export` – download current products CSV file
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
+- `POST /api/ai/coach` – interactive AI planning response for admin client-reply strategy
 - `POST /api/meta/connect-later` – store future Meta connection intent
 
 ## Product CSV pricing behavior

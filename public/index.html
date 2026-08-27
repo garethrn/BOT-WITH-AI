@@ -18,20 +18,21 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b1220,#111a2d); color: var(--text); }
-    .wrap { max-width: 1300px; margin: 0 auto; padding: 18px; }
-    .top { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 18px; }
+    .top { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .badge { padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font-size: 13px; }
-    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 12px; min-height: 480px; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 12px; min-height: 560px; }
     .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .panel h2 { margin: 0; font-size: 16px; }
     .head { padding: 12px; border-bottom: 1px solid var(--line); background: #0f1727; }
     .body { padding: 12px; }
     .chat-list { max-height: 560px; overflow: auto; display: grid; gap: 8px; }
-    .chat-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--card-2); cursor: pointer; }
+    .chat-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--card-2); cursor: pointer; transition: .15s ease; }
     .chat-item.active { border-color: var(--brand); }
+    .chat-item:hover { transform: translateY(-1px); border-color: #3d587f; }
     .mini { color: var(--muted); font-size: 12px; }
-    .messages { height: 410px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #0d1525; display: grid; gap: 8px; }
+    .messages { height: 430px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #0d1525; display: grid; gap: 8px; }
     .msg { padding: 8px 10px; border-radius: 10px; max-width: 85%; border: 1px solid var(--line); }
     .msg.user { background: #1e293b; justify-self: start; }
     .msg.bot { background: #0f766e; justify-self: end; }
@@ -47,6 +48,11 @@
     .section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
     pre { background: #0d1525; border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: auto; max-height: 220px; }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .coach-box { border: 1px solid var(--line); border-radius: 10px; background: #0d1525; min-height: 230px; max-height: 280px; overflow:auto; padding:10px; display:grid; gap:8px; }
+    .coach-msg { border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+    .coach-msg.user { background:#1e293b; }
+    .coach-msg.assistant { background:#0f766e; }
+    .muted { color: var(--muted); font-size: 12px; }
     @media (max-width: 980px) { .grid,.two { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -78,6 +84,7 @@
       <div class="panel">
         <div class="head"><h2>Conversations</h2></div>
         <div class="body">
+          <input id="chatSearch" type="text" placeholder="Search by name, number or keyword...">
           <div id="chatList" class="chat-list"></div>
         </div>
       </div>
@@ -124,7 +131,17 @@
           <div id="backupResult" class="mini"></div>
         </div>
         <div>
-          <h3>Teach AI Behavior</h3>
+          <h3>Interactive AI Reply Coach</h3>
+          <div class="muted" style="margin-bottom:8px;">Ask for help planning the best response to a customer message. Then save the AI suggestion to teaching rules if you want.</div>
+          <div id="coachMessages" class="coach-box"></div>
+          <form id="coachForm">
+            <textarea id="coachPrompt" rows="3" placeholder="Example: Client says this quote is too expensive. How should I respond and keep the sale?" required></textarea>
+            <button type="submit">Ask AI Coach</button>
+          </form>
+          <button id="saveCoachAsTeaching" type="button">Save Last Coach Reply to Teachings</button>
+          <div id="coachResult" class="mini"></div>
+          <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+          <h3>Manual Teach AI Behavior</h3>
           <form id="teachForm">
             <textarea id="instruction" rows="4" placeholder="How OpenAI should respond..." required></textarea>
             <button type="submit">Save Teaching</button>
@@ -198,7 +215,7 @@
 
   <script>
     const el = (id) => document.getElementById(id);
-    const state = { activeJid: '', chats: [] };
+    const state = { activeJid: '', chats: [], coachHistory: [], lastCoachReply: '' };
 
     async function apiFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -222,15 +239,43 @@
 
     function setTopMessage(msg) { el('topMessage').textContent = msg || ''; }
 
+    function phoneFromJid(jid) {
+      const local = String(jid || '').split('@')[0].split(':')[0];
+      const digits = local.replace(/[^\d]/g, '');
+      return digits ? `+${digits}` : '';
+    }
+
+    function formatChatTitle(chat) {
+      const phone = chat.phone || phoneFromJid(chat.jid);
+      if (chat.name && phone) return `${chat.name} (${phone})`;
+      if (chat.name) return `${chat.name} (${chat.jid})`;
+      return phone || chat.jid;
+    }
+
+    function isStatusMessage(msg) {
+      const text = String(msg?.text || '').trim().toLowerCase();
+      if (!text) return true;
+      if (text === '[non-text message]') return true;
+      if (/^(status|state|connection)\b/.test(text)) return true;
+      if (/^(bot paused globally|bot resumed globally|chat .* paused|chat .* resumed)\b/.test(text)) return true;
+      return false;
+    }
+
     function renderChats() {
       const list = el('chatList');
       list.innerHTML = '';
-      for (const chat of state.chats) {
+      const term = el('chatSearch').value.trim().toLowerCase();
+      const filtered = !term ? state.chats : state.chats.filter((chat) => (
+        [chat.name, chat.phone, chat.jid, chat.lastMessage]
+          .map((x) => String(x || '').toLowerCase())
+          .some((x) => x.includes(term))
+      ));
+      for (const chat of filtered) {
         const item = document.createElement('div');
         item.className = `chat-item ${state.activeJid === chat.jid ? 'active' : ''}`;
         const title = document.createElement('div');
         const strong = document.createElement('strong');
-        strong.textContent = chat.name ? `${chat.name} (${chat.jid})` : chat.jid;
+        strong.textContent = formatChatTitle(chat);
         title.appendChild(strong);
 
         const preview = document.createElement('div');
@@ -252,7 +297,8 @@
     function renderMessages(messages) {
       const box = el('messages');
       box.innerHTML = '';
-      for (const msg of messages) {
+      const cleanMessages = (messages || []).filter((msg) => !isStatusMessage(msg));
+      for (const msg of cleanMessages) {
         const div = document.createElement('div');
         div.className = `msg ${msg.role || 'user'}`;
         const meta = document.createElement('div');
@@ -263,6 +309,25 @@
         div.appendChild(meta);
         div.appendChild(body);
         box.appendChild(div);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function renderCoachMessages() {
+      const box = el('coachMessages');
+      box.innerHTML = '';
+      if (!state.coachHistory.length) {
+        const empty = document.createElement('div');
+        empty.className = 'mini';
+        empty.textContent = 'No coach conversation yet. Ask a client-response question to begin.';
+        box.appendChild(empty);
+        return;
+      }
+      for (const msg of state.coachHistory) {
+        const item = document.createElement('div');
+        item.className = `coach-msg ${msg.role}`;
+        item.textContent = msg.content;
+        box.appendChild(item);
       }
       box.scrollTop = box.scrollHeight;
     }
@@ -304,7 +369,9 @@
       state.activeJid = jid;
       if (rerenderList) renderChats();
       const data = await getJson(`/api/admin/chats/${encodeURIComponent(jid)}`);
-      el('activeTitle').textContent = `${jid} ${data.paused ? '(Paused)' : '(Active)'} • ${data.status || 'main'}`;
+      const phone = data.phone || phoneFromJid(jid);
+      const heading = data.name ? `${data.name} (${phone || jid})` : (phone || jid);
+      el('activeTitle').textContent = `${heading} ${data.paused ? '(Paused)' : '(Active)'} • ${data.status || 'main'}`;
       renderMessages(data.messages || []);
     }
 
@@ -315,7 +382,7 @@
         el('contactsPanel').textContent = 'No contacts yet.';
         return;
       }
-      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone} | ${contact.jid}`).join('\\n');
+      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone || phoneFromJid(contact.jid)} | ${contact.jid}`).join('\\n');
       el('contactsPanel').textContent = rows;
     }
 
@@ -361,6 +428,7 @@
       } catch (e) { setTopMessage(e.message); }
     };
     el('apiToken').addEventListener('input', updateQrLink);
+    el('chatSearch').addEventListener('input', renderChats);
 
     el('pauseGlobal').onclick = async () => {
       try { await postAction('/api/admin/pause'); } catch (e) { setTopMessage(e.message); }
@@ -429,6 +497,49 @@
         el('teachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
         await refreshDashboardState();
       } catch (e) { el('teachResult').textContent = e.message; }
+    });
+
+    el('coachForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const message = el('coachPrompt').value.trim();
+      if (!message) return;
+      try {
+        state.coachHistory.push({ role: 'user', content: message });
+        renderCoachMessages();
+        const data = await getJson('/api/ai/coach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, history: state.coachHistory })
+        });
+        const reply = String(data.reply || '').trim();
+        if (reply) {
+          state.coachHistory.push({ role: 'assistant', content: reply });
+          state.lastCoachReply = reply;
+        }
+        renderCoachMessages();
+        el('coachPrompt').value = '';
+        el('coachResult').textContent = data.message || 'Coach response ready.';
+      } catch (e) {
+        el('coachResult').textContent = e.message;
+      }
+    });
+
+    el('saveCoachAsTeaching').addEventListener('click', async () => {
+      if (!state.lastCoachReply) {
+        el('coachResult').textContent = 'No coach reply available yet.';
+        return;
+      }
+      try {
+        const data = await getJson('/api/ai/teach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction: state.lastCoachReply })
+        });
+        el('coachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
+        await refreshDashboardState();
+      } catch (e) {
+        el('coachResult').textContent = e.message;
+      }
     });
 
     el('metaForm').addEventListener('submit', async (event) => {
@@ -518,6 +629,7 @@
         await refreshContacts();
         await refreshOrdersAndLeads();
         await refreshProductsPreview();
+        renderCoachMessages();
       } catch (e) {
         setTopMessage(e.message.includes('Unauthorized') ? 'Unauthorized. Enter ADMIN_API_TOKEN.' : e.message);
       }
