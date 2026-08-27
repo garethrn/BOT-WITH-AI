@@ -15,12 +15,14 @@ const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const OpenAI = require('openai');
 const {
     importBackup,
     teachBehavior,
     getDashboardData,
     setMetaConnectionIntent,
-    generateLearnedReply
+    generateLearnedReply,
+    buildOpenAISystemPrompt
 } = require('./lib/ai-learning');
 
 const BROWSER_FINGERPRINTS = [
@@ -33,6 +35,8 @@ const ADMIN_JID = process.env.ADMIN_JID;
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const STORAGE_DIR = path.join(__dirname, 'storage');
 const BACKUPS_DIR = path.join(STORAGE_DIR, 'backups');
@@ -54,6 +58,7 @@ let latestQR = null;
 let retryCount = 0;
 const MAX_RETRIES = 10;
 let botConnectionState = 'starting';
+const openaiClient = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 function getRetryDelay(count) {
     return Math.min(5000 * Math.pow(2, count - 1), 60000);
@@ -73,6 +78,29 @@ function loadProducts() {
         });
 }
 loadProducts();
+
+async function generateOpenAIReply(userText) {
+    if (!openaiClient) return null;
+    const trimmed = String(userText || '').trim();
+    if (!trimmed) return null;
+
+    try {
+        const completion = await openaiClient.responses.create({
+            model: OPENAI_MODEL,
+            input: [
+                { role: 'system', content: buildOpenAISystemPrompt() },
+                { role: 'user', content: trimmed.slice(0, 1000) }
+            ],
+            max_output_tokens: 250
+        });
+
+        const reply = completion.output_text ? completion.output_text.trim() : '';
+        return reply || null;
+    } catch (error) {
+        console.error('❌ OpenAI response failed:', error?.message || error);
+        return null;
+    }
+}
 
 async function startBot(fingerprintIndex = 0) {
     const browser = BROWSER_FINGERPRINTS[fingerprintIndex % BROWSER_FINGERPRINTS.length];
@@ -213,6 +241,12 @@ async function startBot(fingerprintIndex = 0) {
                     const learnedReply = generateLearnedReply(text);
                     if (learnedReply) {
                         await sock.sendMessage(jid, { text: learnedReply });
+                        return;
+                    }
+
+                    const openAIReply = await generateOpenAIReply(text);
+                    if (openAIReply) {
+                        await sock.sendMessage(jid, { text: openAIReply });
                     }
                 }
             } catch (err) {
@@ -277,7 +311,11 @@ app.get('/qr', (_req, res) => {
 app.get('/api/dashboard/state', readRateLimiter, (_req, res) => {
     res.json({
         status: botConnectionState,
-        learned: getDashboardData()
+        learned: getDashboardData(),
+        openai: {
+            enabled: Boolean(openaiClient),
+            model: OPENAI_MODEL
+        }
     });
 });
 

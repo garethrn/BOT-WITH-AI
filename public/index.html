@@ -20,6 +20,7 @@
 <body>
   <h1>BOT WITH AI Dashboard</h1>
   <p>WhatsApp bot status: <span id="status">Loading...</span> | QR: <a href="/qr" target="_blank">Open /qr</a></p>
+  <p>OpenAI status: <span id="openaiStatus">Loading...</span></p>
   <p class="help">Optional security token: <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="max-width: 360px;" /></p>
 
   <section>
@@ -35,7 +36,7 @@
 
   <section>
     <h2>Teach AI Behavior</h2>
-    <p class="help">Provide rules and guidance on how replies should be handled.</p>
+    <p class="help">Provide rules and guidance that OpenAI will use as direction when generating responses.</p>
     <form id="teachForm">
       <label for="instruction">Teaching instruction</label>
       <textarea id="instruction" rows="4" placeholder="Example: Always answer politely and confirm order details before checkout." required></textarea>
@@ -61,6 +62,7 @@
 
   <script>
     const statusEl = document.getElementById('status');
+    const openaiStatusEl = document.getElementById('openaiStatus');
     const tokenEl = document.getElementById('apiToken');
 
     async function apiFetch(url, options = {}) {
@@ -77,6 +79,7 @@
       }
       const state = await response.json();
       statusEl.textContent = state.status;
+      openaiStatusEl.textContent = state.openai?.enabled ? `Enabled (${state.openai.model})` : 'Disabled (set OPENAI_API_KEY)';
     }
 
     document.getElementById('backupForm').addEventListener('submit', async (event) => {

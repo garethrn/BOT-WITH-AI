@@ -7,7 +7,8 @@ This repository now contains the **MY WHATSAPP BOT** build with added AI-oriente
 - Base WhatsApp bot server copied from `garethrn/my-whatsapp-bot`
 - Dashboard at `/dashboard`
 - Upload/import section for WhatsApp backup files so the bot can learn response rules
-- Teaching section to provide guidance for how the bot should answer
+- Teaching section to provide guidance for how the bot and OpenAI should answer
+- OpenAI response generation fallback using dashboard direction and imported learning rules
 - "Connect to Meta later" section to save future legal WhatsApp Business integration details
 
 ## Run
@@ -18,6 +19,7 @@ npm start
 ```
 
 Optional security: set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token`.
+To enable OpenAI responses, set `OPENAI_API_KEY`.
 
 ## Railway deployment and implementation guide (step-by-step)
 
@@ -58,6 +60,8 @@ Set these in service **Variables**:
 - `ADMIN_JID=1234567890@s.whatsapp.net` (replace with your admin WhatsApp JID)
 - `ADMIN_API_TOKEN=<strong-random-token>` (recommended for production)
 - `AI_DATA_FILE=/app/storage/ai-learning.json` (recommended with Railway volume)
+- `OPENAI_API_KEY=<your-openai-api-key>` (required for OpenAI replies)
+- `OPENAI_MODEL=gpt-4o-mini` (optional, default shown)
 - `EMAIL_USER=<optional-gmail-address>` (optional)
 - `EMAIL_PASS=<optional-gmail-app-password>` (optional)
 - `PORT` is optional (Railway injects port automatically)
@@ -93,6 +97,7 @@ In Railway logs, confirm startup messages similar to:
 ### 11) Teach response behavior
 1. In dashboard **Teach AI Behavior**, enter instruction text.
 2. Save teaching to persist behavior guidance.
+3. OpenAI uses this dashboard teaching plus imported backup rules as direction for generated replies.
 
 ### 12) Set up future Meta legal integration option
 1. In dashboard **Meta Legal Integration (Later)**, enter:
@@ -115,6 +120,8 @@ curl -i https://<your-railway-domain>/dashboard
 curl -i https://<your-railway-domain>/qr
 curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/state
 ```
+
+`/api/dashboard/state` includes an `openai` object showing whether OpenAI is enabled and which model is active.
 
 ### 14) Operational notes
 - Keep `ADMIN_API_TOKEN` enabled in production.

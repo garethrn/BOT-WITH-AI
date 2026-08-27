@@ -9,6 +9,7 @@
     "express-rate-limit": "^7.4.1",
     "multer": "^2.0.2",
     "nodemailer": "^9.0.5",
+    "openai": "^7.7.0",
     "pino": "^8.0.0",
     "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0"
