@@ -13,6 +13,10 @@ This repository now contains the **MY WHATSAPP BOT** build with added AI-oriente
 - Modern admin dashboard chat console (conversation list + full message history)
 - Admin controls to pause/resume bot globally or per chat
 - Admin ability to send manual replies from dashboard
+- Admin contacts management (add/rename/delete/import from csv/txt/vcf)
+- Admin orders panel and unanswered leads panel
+- Conversation tab/status moving (main/quoted/in-progress/idle/closed/paid/paused)
+- WhatsApp session logout from admin dashboard
 - "Connect to Meta later" section to save future legal WhatsApp Business integration details
 
 ## Run
@@ -22,8 +26,9 @@ npm install
 npm start
 ```
 
-Set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token` for admin features.
+Set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token` for admin, AI-learning, and meta routes.
 To enable OpenAI responses, set `OPENAI_API_KEY`.
+When `ADMIN_API_TOKEN` is enabled, `/qr` access also requires that token (dashboard adds it automatically in QR link).
 
 ## Full beginner ("dummies") install guide
 
@@ -261,11 +266,20 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `GET /api/dashboard/state` – bot + learning state
 - `GET /api/admin/chats` – list conversations with last message/activity
 - `GET /api/admin/chats/:jid` – full message history for one chat
+- `POST /api/admin/conversations/:jid/move` – move chat status tab
 - `POST /api/admin/pause` – pause bot globally
 - `POST /api/admin/resume` – resume bot globally
 - `POST /api/admin/chats/:jid/pause` – pause a specific conversation
 - `POST /api/admin/chats/:jid/resume` – resume a specific conversation
 - `POST /api/admin/send` – send manual admin message to a conversation
+- `GET /api/admin/orders` – list tracked checkout orders
+- `GET /api/admin/leads` – list unanswered user messages captured as leads
+- `GET /api/admin/contacts` – list contacts
+- `POST /api/admin/contacts` – add contact by name + phone/jid
+- `POST /api/admin/contacts/:jid/rename` – rename a contact
+- `DELETE /api/admin/contacts/:jid` – remove contact name mapping
+- `POST /api/admin/contacts/import` – bulk import contacts file
+- `POST /api/admin/whatsapp/logout` – clear WhatsApp auth and regenerate QR
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
 - `POST /api/meta/connect-later` – store future Meta connection intent

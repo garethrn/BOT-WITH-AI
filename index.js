@@ -42,6 +42,10 @@ const STORAGE_DIR = path.join(__dirname, 'storage');
 const BACKUPS_DIR = path.join(STORAGE_DIR, 'backups');
 const CSV_FILE = path.join(__dirname, 'products.csv');
 const AUTH_DIR = path.join(STORAGE_DIR, 'auth_info');
+const LEADS_FILE = path.join(STORAGE_DIR, 'learning_leads.json');
+const ORDERS_FILE = path.join(STORAGE_DIR, 'orders.json');
+const CONTACTS_FILE = path.join(STORAGE_DIR, 'contacts.json');
+const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -65,9 +69,33 @@ const pausedChats = new Set();
 const chatLog = new Map();
 const chatLastActivity = new Map();
 const MAX_CHAT_MESSAGES = 500;
+let learningLeads = [];
+let orders = [];
+let contactNames = {};
+let conversationTabOverrides = {};
+
+function loadJsonFile(filePath, fallbackValue) {
+    try {
+        if (!fs.existsSync(filePath)) return fallbackValue;
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        return parsed && typeof parsed === 'object' ? parsed : fallbackValue;
+    } catch {
+        return fallbackValue;
+    }
+}
+
+function saveJsonFile(filePath, value) {
+    fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+learningLeads = loadJsonFile(LEADS_FILE, []);
+orders = loadJsonFile(ORDERS_FILE, []);
+contactNames = loadJsonFile(CONTACTS_FILE, {});
+conversationTabOverrides = loadJsonFile(CONVERSATION_TABS_FILE, {});
 
 function getRetryDelay(count) {
-    return Math.min(5000 * Math.pow(2, count - 1), 60000);
+    const safeCount = Math.max(1, Number(count) || 1);
+    return Math.min(5000 * Math.pow(2, safeCount - 1), 60000);
 }
 
 function loadProducts() {
@@ -105,16 +133,116 @@ function logChatMessage(jid, role, text) {
     chatLastActivity.set(cleanJid, new Date().toISOString());
 }
 
+function pushLearningLead(jid, text) {
+    const message = String(text || '').trim();
+    if (!jid || !message) return;
+    if (message.length < 3) return;
+
+    const existing = learningLeads.find((lead) => lead.jid === jid && lead.message === message);
+    if (existing) {
+        existing.count = (existing.count || 1) + 1;
+        existing.lastSeen = new Date().toISOString();
+    } else {
+        learningLeads.push({
+            jid,
+            message,
+            count: 1,
+            firstSeen: new Date().toISOString(),
+            lastSeen: new Date().toISOString()
+        });
+    }
+    learningLeads = learningLeads.slice(-1000);
+    saveJsonFile(LEADS_FILE, learningLeads);
+}
+
+function recordOrder(jid, cart, total) {
+    const order = {
+        id: `ord_${Date.now()}`,
+        jid,
+        items: Array.isArray(cart) ? cart.map((item) => ({
+            id: item.ID,
+            name: item.Name,
+            qty: item.qty,
+            price: item.Price
+        })) : [],
+        total: Number(total.toFixed(2)),
+        status: 'quoted',
+        createdAt: new Date().toISOString()
+    };
+    orders.push(order);
+    orders = orders.slice(-2000);
+    saveJsonFile(ORDERS_FILE, orders);
+    return order;
+}
+
+function normalizeToJid(value) {
+    const input = String(value || '').trim();
+    if (!input) return '';
+    if (input.includes('@')) return input;
+    const digits = input.replace(/[^\d]/g, '');
+    return digits ? `${digits}@s.whatsapp.net` : '';
+}
+
+function parseContactsFromText(text) {
+    const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const results = [];
+    for (const line of lines) {
+        const clean = line.replace(/\uFEFF/g, '');
+        const parts = clean.includes(',') ? clean.split(',') : clean.split('|');
+        if (parts.length >= 2) {
+            const name = parts[0].trim();
+            const phone = parts.slice(1).join(' ').trim();
+            const jid = normalizeToJid(phone);
+            if (name && jid) results.push({ jid, name });
+            continue;
+        }
+        const vcfName = clean.match(/^FN:(.+)$/i);
+        if (vcfName) {
+            results.push({ pendingName: vcfName[1].trim() });
+            continue;
+        }
+        const vcfPhone = clean.match(/^TEL[^:]*:(.+)$/i);
+        if (vcfPhone) {
+            const last = results[results.length - 1];
+            const jid = normalizeToJid(vcfPhone[1].trim());
+            if (last && last.pendingName && jid) {
+                last.jid = jid;
+                last.name = last.pendingName;
+                delete last.pendingName;
+            }
+        }
+    }
+    return results.filter((entry) => entry.jid && entry.name);
+}
+
+function conversationStatusForJid(jid) {
+    if (conversationTabOverrides[jid]) return conversationTabOverrides[jid];
+    if (pausedChats.has(jid) || isBotPaused) return 'paused';
+    const hasOrders = orders.some((order) => order.jid === jid);
+    if (hasOrders) return 'quoted';
+    return 'idle';
+}
+
 function getConversationSummaries() {
     const summaries = [];
-    for (const [jid, messages] of chatLog.entries()) {
+    const allJids = new Set([
+        ...Array.from(chatLog.keys()),
+        ...Object.keys(contactNames),
+        ...orders.map((order) => order.jid),
+        ...learningLeads.map((lead) => lead.jid)
+    ]);
+
+    for (const jid of allJids) {
+        const messages = chatLog.get(jid) || [];
         const last = messages[messages.length - 1];
         summaries.push({
             jid,
+            name: contactNames[jid] || '',
             lastMessage: last?.text || '',
             lastRole: last?.role || '',
             lastTimestamp: last?.timestamp || chatLastActivity.get(jid) || null,
             paused: pausedChats.has(jid),
+            status: conversationStatusForJid(jid),
             messageCount: messages.length
         });
     }
@@ -267,6 +395,7 @@ async function startBot(fingerprintIndex = 0) {
                 }
 
                 if (isBotPaused || pausedChats.has(jid)) {
+                    pushLearningLead(jid, text);
                     return;
                 }
 
@@ -301,6 +430,7 @@ async function startBot(fingerprintIndex = 0) {
                     });
                     summary += `\n*Total: ${total.toFixed(2)}*`;
                     await sendTrackedMessage(jid, summary);
+                    recordOrder(jid, cart, total);
                     delete userCarts[jid];
                 } else {
                     const learnedReply = generateLearnedReply(normalizedText);
@@ -312,6 +442,8 @@ async function startBot(fingerprintIndex = 0) {
                     const openAIReply = await generateOpenAIReply(text);
                     if (openAIReply) {
                         await sendTrackedMessage(jid, openAIReply);
+                    } else {
+                        pushLearningLead(jid, text);
                     }
                 }
             } catch (err) {
@@ -339,8 +471,9 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function requireApiToken(req, res, next) {
-    if (req.path.startsWith('/admin') && !ADMIN_API_TOKEN) {
-        return res.status(503).json({ error: 'ADMIN_API_TOKEN must be configured for admin APIs.' });
+    const sensitivePath = req.path.startsWith('/admin') || req.path.startsWith('/ai') || req.path.startsWith('/meta');
+    if (sensitivePath && !ADMIN_API_TOKEN) {
+        return res.status(503).json({ error: 'ADMIN_API_TOKEN must be configured for admin, ai, and meta APIs.' });
     }
     if (!ADMIN_API_TOKEN) return next();
     const provided = req.get('x-admin-token');
@@ -364,11 +497,20 @@ const upload = multer({
         }
     })
 });
+const contactsImportUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1024 * 1024 * 5 }
+});
 
 app.get('/', (_req, res) => res.send('Bot is running!'));
 app.get('/dashboard', readRateLimiter, (_req, res) => res.redirect('/index.html'));
 
 app.get('/qr', (_req, res) => {
+    const providedHeaderToken = _req.get('x-admin-token');
+    const providedQueryToken = String(_req.query?.token || '').trim();
+    if (ADMIN_API_TOKEN && providedHeaderToken !== ADMIN_API_TOKEN && providedQueryToken !== ADMIN_API_TOKEN) {
+        return res.status(401).send('Unauthorized');
+    }
     if (!latestQR) {
         return res.status(404).send('No QR code available yet. The bot may already be connected, or it has not started yet.');
     }
@@ -387,7 +529,10 @@ app.get('/api/dashboard/state', readRateLimiter, (_req, res) => {
         admin: {
             paused: isBotPaused,
             pausedChats: Array.from(pausedChats),
-            chatCount: chatLog.size
+            chatCount: chatLog.size,
+            ordersCount: orders.length,
+            leadsCount: learningLeads.length,
+            contactsCount: Object.keys(contactNames).length
         }
     });
 });
@@ -405,9 +550,83 @@ app.get('/api/admin/chats/:jid', readRateLimiter, (req, res) => {
     if (!jid) return res.status(400).json({ error: 'Missing jid.' });
     res.json({
         jid,
+        name: contactNames[jid] || '',
         paused: pausedChats.has(jid),
-        messages: chatLog.get(jid) || []
+        status: conversationStatusForJid(jid),
+        messages: chatLog.get(jid) || [],
+        orders: orders.filter((order) => order.jid === jid)
     });
+});
+
+app.post('/api/admin/conversations/:jid/move', writeRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    const tab = String(req.body?.tab || '').trim().toLowerCase();
+    const allowed = new Set(['main', 'quoted', 'in_progress', 'idle', 'closed', 'paused', 'paid']);
+    if (!jid) return res.status(400).json({ error: 'Missing jid.' });
+    if (!allowed.has(tab)) return res.status(400).json({ error: 'Invalid tab value.' });
+    conversationTabOverrides[jid] = tab;
+    saveJsonFile(CONVERSATION_TABS_FILE, conversationTabOverrides);
+    res.json({ message: `Conversation moved to ${tab}.`, jid, tab });
+});
+
+app.get('/api/admin/orders', readRateLimiter, (_req, res) => {
+    const sorted = [...orders].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    res.json({ orders: sorted });
+});
+
+app.get('/api/admin/leads', readRateLimiter, (_req, res) => {
+    const sorted = [...learningLeads].sort((a, b) => String(b.lastSeen || '').localeCompare(String(a.lastSeen || '')));
+    res.json({ leads: sorted });
+});
+
+app.get('/api/admin/contacts', readRateLimiter, (_req, res) => {
+    const jidSet = new Set([
+        ...Object.keys(contactNames),
+        ...Array.from(chatLog.keys())
+    ]);
+    const contacts = Array.from(jidSet).map((jid) => ({
+        jid,
+        name: contactNames[jid] || '',
+        phone: jid.replace('@s.whatsapp.net', '')
+    })).sort((a, b) => a.jid.localeCompare(b.jid));
+    res.json({ contacts });
+});
+
+app.post('/api/admin/contacts/:jid/rename', writeRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    const name = String(req.body?.name || '').trim();
+    if (!jid || !name) return res.status(400).json({ error: 'jid and name are required.' });
+    contactNames[jid] = name;
+    saveJsonFile(CONTACTS_FILE, contactNames);
+    res.json({ message: 'Contact renamed.', jid, name });
+});
+
+app.post('/api/admin/contacts', writeRateLimiter, (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    const jid = normalizeToJid(req.body?.phone || req.body?.jid || '');
+    if (!name || !jid) return res.status(400).json({ error: 'Valid name and phone/jid are required.' });
+    contactNames[jid] = name;
+    saveJsonFile(CONTACTS_FILE, contactNames);
+    res.json({ message: 'Contact saved.', jid, name });
+});
+
+app.post('/api/admin/contacts/import', writeRateLimiter, contactsImportUpload.single('file'), (req, res) => {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'Missing contacts file.' });
+    const parsed = parseContactsFromText(req.file.buffer.toString('utf8'));
+    if (parsed.length === 0) return res.status(400).json({ error: 'No valid contacts found in file.' });
+    for (const entry of parsed) {
+        contactNames[entry.jid] = entry.name;
+    }
+    saveJsonFile(CONTACTS_FILE, contactNames);
+    res.json({ message: 'Contacts imported.', imported: parsed.length });
+});
+
+app.delete('/api/admin/contacts/:jid', writeRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    if (!jid) return res.status(400).json({ error: 'Missing jid.' });
+    delete contactNames[jid];
+    saveJsonFile(CONTACTS_FILE, contactNames);
+    res.json({ message: 'Contact removed.', jid });
 });
 
 app.post('/api/admin/pause', writeRateLimiter, (_req, res) => {
@@ -418,6 +637,26 @@ app.post('/api/admin/pause', writeRateLimiter, (_req, res) => {
 app.post('/api/admin/resume', writeRateLimiter, (_req, res) => {
     isBotPaused = false;
     res.json({ message: 'Bot resumed globally.', paused: false });
+});
+
+app.post('/api/admin/whatsapp/logout', writeRateLimiter, (_req, res) => {
+    try {
+        if (botSocket) {
+            try {
+                botSocket.end?.(new Error('Admin requested logout'));
+            } catch {
+                botSocket.ws?.close?.();
+            }
+        }
+        if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+        botConnectionState = 'disconnected';
+        botSocket = null;
+        retryCount = 0;
+        setTimeout(() => startBot(0), 1500);
+        return res.json({ message: 'WhatsApp session cleared. New QR will be generated.' });
+    } catch (error) {
+        return res.status(500).json({ error: 'Failed to logout WhatsApp session.' });
+    }
 });
 
 app.post('/api/admin/chats/:jid/pause', writeRateLimiter, (req, res) => {
@@ -504,14 +743,14 @@ app.use((err, _req, res, next) => {
         console.error('❌ API error:', err);
         return res.status(500).json({ error: 'Unexpected server error.' });
     }
-    return next(err);
+    return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
 app.listen(PORT, () => {
     console.log(`📡 Web server listening on port ${PORT}`);
     console.log('🔗 Dashboard available at /dashboard');
     if (!ADMIN_API_TOKEN) {
-        console.warn('⚠️ ADMIN_API_TOKEN is not set. Admin APIs are currently unprotected.');
+        console.warn('⚠️ ADMIN_API_TOKEN is not set. Admin/AI/Meta APIs are blocked until configured.');
     }
     startBot(0);
 });

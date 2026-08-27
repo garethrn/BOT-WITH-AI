@@ -59,13 +59,17 @@
         <span class="badge">OpenAI: <strong id="openaiStatus">Loading...</strong></span>
         <span class="badge">Global Pause: <strong id="globalPause">No</strong></span>
         <span class="badge">Chats: <strong id="chatCount">0</strong></span>
-        <a class="badge" href="/qr" target="_blank">Open QR</a>
+        <span class="badge">Orders: <strong id="ordersCount">0</strong></span>
+        <span class="badge">Leads: <strong id="leadsCount">0</strong></span>
+        <span class="badge">Contacts: <strong id="contactsCount">0</strong></span>
+        <a class="badge" id="qrLink" href="/qr" target="_blank">Open QR</a>
       </div>
       <div class="row" style="margin-top:10px;">
         <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="min-width:260px;">
         <button id="refreshAll">Refresh</button>
         <button id="pauseGlobal" class="btn-danger">Pause Bot</button>
         <button id="resumeGlobal" class="btn-ok">Resume Bot</button>
+        <button id="logoutWhatsapp" class="btn-danger">Logout WhatsApp</button>
       </div>
       <div id="topMessage" class="mini" style="margin-top:8px;"></div>
     </div>
@@ -83,6 +87,16 @@
           <div class="row" style="justify-content:space-between;">
             <h2 id="activeTitle">Select a chat</h2>
             <div class="row">
+              <select id="moveTabSelect">
+                <option value="main">Main</option>
+                <option value="quoted">Quoted</option>
+                <option value="in_progress">In Progress</option>
+                <option value="idle">Idle</option>
+                <option value="closed">Closed</option>
+                <option value="paid">Paid</option>
+                <option value="paused">Paused</option>
+              </select>
+              <button id="moveTabBtn">Move</button>
               <button id="pauseChat" class="btn-danger">Pause Chat</button>
               <button id="resumeChat" class="btn-ok">Resume Chat</button>
             </div>
@@ -139,6 +153,28 @@
           <pre id="summaryPreview">[]</pre>
         </div>
       </div>
+
+      <div class="section two">
+        <div>
+          <h3>Contacts</h3>
+          <form id="contactAddForm">
+            <input id="contactName" type="text" placeholder="Contact name" required>
+            <input id="contactPhone" type="text" placeholder="Phone number or JID" required>
+            <button type="submit">Add / Update Contact</button>
+          </form>
+          <form id="contactImportForm">
+            <input id="contactImportFile" type="file" accept=".csv,.txt,.vcf" required>
+            <button type="submit">Import Contacts File</button>
+          </form>
+          <div id="contactsPanel" class="mini"></div>
+        </div>
+        <div>
+          <h3>Orders</h3>
+          <pre id="ordersPanel">[]</pre>
+          <h3>Leads (unanswered)</h3>
+          <pre id="leadsPanel">[]</pre>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -152,6 +188,11 @@
       if (token) headers.set('x-admin-token', token);
       const res = await fetch(url, { ...options, headers });
       return res;
+    }
+
+    function updateQrLink() {
+      const token = el('apiToken').value.trim();
+      el('qrLink').href = token ? `/qr?token=${encodeURIComponent(token)}` : '/qr';
     }
 
     async function getJson(url, options = {}) {
@@ -171,7 +212,7 @@
         item.className = `chat-item ${state.activeJid === chat.jid ? 'active' : ''}`;
         const title = document.createElement('div');
         const strong = document.createElement('strong');
-        strong.textContent = chat.jid;
+        strong.textContent = chat.name ? `${chat.name} (${chat.jid})` : chat.jid;
         title.appendChild(strong);
 
         const preview = document.createElement('div');
@@ -180,7 +221,7 @@
 
         const meta = document.createElement('div');
         meta.className = 'mini';
-        meta.textContent = `${chat.lastTimestamp || ''} • ${chat.paused ? 'Paused' : 'Active'} • ${chat.messageCount || 0} msgs`;
+        meta.textContent = `${chat.lastTimestamp || ''} • ${chat.status || (chat.paused ? 'paused' : 'main')} • ${chat.messageCount || 0} msgs`;
 
         item.appendChild(title);
         item.appendChild(preview);
@@ -214,6 +255,9 @@
       el('openaiStatus').textContent = data.openai?.enabled ? `Enabled (${data.openai.model})` : 'Disabled';
       el('globalPause').textContent = data.admin?.paused ? 'Yes' : 'No';
       el('chatCount').textContent = String(data.admin?.chatCount || 0);
+      el('ordersCount').textContent = String(data.admin?.ordersCount || 0);
+      el('leadsCount').textContent = String(data.admin?.leadsCount || 0);
+      el('contactsCount').textContent = String(data.admin?.contactsCount || 0);
 
       const learned = data.learned || {};
       const backups = Array.isArray(learned.backups) ? learned.backups : [];
@@ -242,8 +286,28 @@
       state.activeJid = jid;
       if (rerenderList) renderChats();
       const data = await getJson(`/api/admin/chats/${encodeURIComponent(jid)}`);
-      el('activeTitle').textContent = `${jid} ${data.paused ? '(Paused)' : '(Active)'}`;
+      el('activeTitle').textContent = `${jid} ${data.paused ? '(Paused)' : '(Active)'} • ${data.status || 'main'}`;
       renderMessages(data.messages || []);
+    }
+
+    async function refreshContacts() {
+      const data = await getJson('/api/admin/contacts');
+      const contacts = data.contacts || [];
+      if (!contacts.length) {
+        el('contactsPanel').textContent = 'No contacts yet.';
+        return;
+      }
+      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone} | ${contact.jid}`).join('\\n');
+      el('contactsPanel').textContent = rows;
+    }
+
+    async function refreshOrdersAndLeads() {
+      const [ordersData, leadsData] = await Promise.all([
+        getJson('/api/admin/orders'),
+        getJson('/api/admin/leads')
+      ]);
+      el('ordersPanel').textContent = JSON.stringify((ordersData.orders || []).slice(0, 20), null, 2);
+      el('leadsPanel').textContent = JSON.stringify((leadsData.leads || []).slice(0, 20), null, 2);
     }
 
     async function postAction(url, body = {}) {
@@ -255,6 +319,8 @@
       setTopMessage(data.message || 'Done');
       await refreshDashboardState();
       await refreshChats();
+      await refreshContacts();
+      await refreshOrdersAndLeads();
     }
 
     el('refreshAll').onclick = async () => {
@@ -264,6 +330,7 @@
         setTopMessage('Refreshed');
       } catch (e) { setTopMessage(e.message); }
     };
+    el('apiToken').addEventListener('input', updateQrLink);
 
     el('pauseGlobal').onclick = async () => {
       try { await postAction('/api/admin/pause'); } catch (e) { setTopMessage(e.message); }
@@ -271,6 +338,19 @@
 
     el('resumeGlobal').onclick = async () => {
       try { await postAction('/api/admin/resume'); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('logoutWhatsapp').onclick = async () => {
+      try { await postAction('/api/admin/whatsapp/logout'); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('moveTabBtn').onclick = async () => {
+      if (!state.activeJid) return setTopMessage('Select a chat first.');
+      try {
+        await postAction(`/api/admin/conversations/${encodeURIComponent(state.activeJid)}/move`, {
+          tab: el('moveTabSelect').value
+        });
+      } catch (e) { setTopMessage(e.message); }
     };
 
     el('pauseChat').onclick = async () => {
@@ -338,10 +418,40 @@
       } catch (e) { el('metaResult').textContent = e.message; }
     });
 
+    el('contactAddForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await postAction('/api/admin/contacts', {
+          name: el('contactName').value.trim(),
+          phone: el('contactPhone').value.trim()
+        });
+        el('contactName').value = '';
+        el('contactPhone').value = '';
+      } catch (e) { setTopMessage(e.message); }
+    });
+
+    el('contactImportForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const file = el('contactImportFile').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiFetch('/api/admin/contacts/import', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Import failed');
+        setTopMessage(`${data.message} (${data.imported})`);
+        await refreshContacts();
+      } catch (e) { setTopMessage(e.message); }
+    });
+
     (async () => {
       try {
+        updateQrLink();
         await refreshDashboardState();
         await refreshChats();
+        await refreshContacts();
+        await refreshOrdersAndLeads();
       } catch (e) {
         setTopMessage(e.message.includes('Unauthorized') ? 'Unauthorized. Enter ADMIN_API_TOKEN.' : e.message);
       }
