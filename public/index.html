@@ -293,13 +293,18 @@
     }
 
     async function refreshAllData() {
-      await Promise.all([
+      const results = await Promise.allSettled([
         refreshDashboardState(),
         refreshChats(),
         refreshContacts(),
         refreshOrdersAndLeads(),
         refreshProductsPreview()
       ]);
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length) {
+        const firstError = failures[0].reason?.message || 'Some sections failed to refresh.';
+        setTopMessage(firstError);
+      }
       try {
         await refreshActiveChat();
       } catch (e) {
