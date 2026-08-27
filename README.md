@@ -10,6 +10,9 @@ This repository now contains the **MY WHATSAPP BOT** build with added AI-oriente
 - Teaching section to provide guidance for how the bot and OpenAI should answer
 - OpenAI response generation fallback using dashboard direction and imported learning rules
 - Auto-learning support for WhatsApp chat export format using your name in the transcript
+- Modern admin dashboard chat console (conversation list + full message history)
+- Admin controls to pause/resume bot globally or per chat
+- Admin ability to send manual replies from dashboard
 - "Connect to Meta later" section to save future legal WhatsApp Business integration details
 
 ## Run
@@ -19,7 +22,7 @@ npm install
 npm start
 ```
 
-Optional security: set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token`.
+Set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token` for admin features.
 To enable OpenAI responses, set `OPENAI_API_KEY`.
 
 ## Full beginner ("dummies") install guide
@@ -104,7 +107,7 @@ Notes:
 
 ### J) Open full dashboard
 1. Open: `https://your-domain/dashboard`
-2. Paste `ADMIN_API_TOKEN` in token field (if enabled).
+2. Paste `ADMIN_API_TOKEN` in token field.
 3. Use sections:
    - Upload backups
    - Teach AI behavior
@@ -123,6 +126,7 @@ Notes:
 - **No OpenAI replies**: missing/invalid `OPENAI_API_KEY`.
 - **Data disappears after restart**: volume missing or wrong mount path.
 - **No QR email**: Gmail app password not created correctly.
+- **Chat monitor list reset after restart**: live admin chat monitor history and pause states are in-memory and reset on restart.
 
 ## Railway deployment and implementation guide (step-by-step)
 
@@ -161,7 +165,7 @@ Why this is required:
 Set these in service **Variables**:
 
 - `ADMIN_JID=1234567890@s.whatsapp.net` (replace with your admin WhatsApp JID)
-- `ADMIN_API_TOKEN=<strong-random-token>` (recommended for production)
+- `ADMIN_API_TOKEN=<strong-random-token>` (required for admin APIs)
 - `AI_DATA_FILE=/app/storage/ai-learning.json` (recommended with Railway volume)
 - `OPENAI_API_KEY=<your-openai-api-key>` (required for OpenAI replies)
 - `OPENAI_MODEL=gpt-4o-mini` (optional, default shown)
@@ -188,7 +192,7 @@ In Railway logs, confirm startup messages similar to:
 
 ### 9) Open the dashboard
 1. Open your Railway public URL + `/dashboard`
-2. If `ADMIN_API_TOKEN` is set, enter token in dashboard token field.
+2. Enter `ADMIN_API_TOKEN` in dashboard token field.
 
 ### 10) Implement AI learning from backups
 1. In dashboard **Import WhatsApp Backups for Learning**, upload `.txt`, `.csv`, or `.json`.
@@ -255,6 +259,13 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `GET /dashboard` – web dashboard
 - `GET /qr` – current login QR (when available)
 - `GET /api/dashboard/state` – bot + learning state
+- `GET /api/admin/chats` – list conversations with last message/activity
+- `GET /api/admin/chats/:jid` – full message history for one chat
+- `POST /api/admin/pause` – pause bot globally
+- `POST /api/admin/resume` – resume bot globally
+- `POST /api/admin/chats/:jid/pause` – pause a specific conversation
+- `POST /api/admin/chats/:jid/resume` – resume a specific conversation
+- `POST /api/admin/send` – send manual admin message to a conversation
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
 - `POST /api/meta/connect-later` – store future Meta connection intent

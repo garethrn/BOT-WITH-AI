@@ -59,6 +59,12 @@ let retryCount = 0;
 const MAX_RETRIES = 10;
 let botConnectionState = 'starting';
 const openaiClient = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+let botSocket = null;
+let isBotPaused = false;
+const pausedChats = new Set();
+const chatLog = new Map();
+const chatLastActivity = new Map();
+const MAX_CHAT_MESSAGES = 500;
 
 function getRetryDelay(count) {
     return Math.min(5000 * Math.pow(2, count - 1), 60000);
@@ -79,22 +85,73 @@ function loadProducts() {
 }
 loadProducts();
 
+function logChatMessage(jid, role, text) {
+    const cleanJid = String(jid || '').trim();
+    const cleanText = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!cleanJid || !cleanText) return;
+
+    const existing = chatLog.get(cleanJid) || [];
+    existing.push({
+        role,
+        text: cleanText,
+        timestamp: new Date().toISOString()
+    });
+
+    if (existing.length > MAX_CHAT_MESSAGES) {
+        existing.splice(0, existing.length - MAX_CHAT_MESSAGES);
+    }
+
+    chatLog.set(cleanJid, existing);
+    chatLastActivity.set(cleanJid, new Date().toISOString());
+}
+
+function getConversationSummaries() {
+    const summaries = [];
+    for (const [jid, messages] of chatLog.entries()) {
+        const last = messages[messages.length - 1];
+        summaries.push({
+            jid,
+            lastMessage: last?.text || '',
+            lastRole: last?.role || '',
+            lastTimestamp: last?.timestamp || chatLastActivity.get(jid) || null,
+            paused: pausedChats.has(jid),
+            messageCount: messages.length
+        });
+    }
+
+    summaries.sort((a, b) => {
+        const ta = a.lastTimestamp ? new Date(a.lastTimestamp).getTime() : 0;
+        const tb = b.lastTimestamp ? new Date(b.lastTimestamp).getTime() : 0;
+        return tb - ta;
+    });
+
+    return summaries;
+}
+
+async function sendTrackedMessage(jid, text, role = 'bot') {
+    if (!botSocket) throw new Error('WhatsApp socket not ready');
+    await botSocket.sendMessage(jid, { text });
+    logChatMessage(jid, role, text);
+}
+
 async function generateOpenAIReply(userText) {
     if (!openaiClient) return null;
     const trimmed = String(userText || '').trim();
     if (!trimmed) return null;
 
     try {
-        const completion = await openaiClient.responses.create({
+        const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
-            input: [
+            messages: [
                 { role: 'system', content: buildOpenAISystemPrompt() },
                 { role: 'user', content: trimmed.slice(0, 1000) }
             ],
-            max_output_tokens: 250
+            max_tokens: 250
         });
 
-        const reply = completion.output_text ? completion.output_text.trim() : '';
+        const reply = completion.choices?.[0]?.message?.content
+            ? String(completion.choices[0].message.content).trim()
+            : '';
         return reply || null;
     } catch (error) {
         console.error('❌ OpenAI response failed:', error?.message || error);
@@ -114,6 +171,7 @@ async function startBot(fingerprintIndex = 0) {
             browser,
             qrTimeout: 120000
         });
+        botSocket = sock;
 
         sock.ev.on('creds.update', saveCreds);
 
@@ -153,6 +211,7 @@ async function startBot(fingerprintIndex = 0) {
                 const err = lastDisconnect?.error;
                 const statusCode = (err instanceof Boom) ? err.output.statusCode : 0;
                 botConnectionState = 'disconnected';
+                botSocket = null;
                 console.error(`🔌 Connection closed. Status: ${statusCode}. Reason: ${err?.message || 'unknown'}`);
                 retryCount++;
                 if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
@@ -188,7 +247,9 @@ async function startBot(fingerprintIndex = 0) {
                     msg.message.conversation ||
                     msg.message.extendedTextMessage?.text ||
                     ''
-                ).toLowerCase().trim();
+                ).trim();
+                const normalizedText = text.toLowerCase();
+                logChatMessage(jid, 'user', text || '[non-text message]');
 
                 if (jid === ADMIN_JID && msg.message.documentMessage) {
                     try {
@@ -197,7 +258,7 @@ async function startBot(fingerprintIndex = 0) {
                             const buffer = await downloadMediaMessage(msg, 'buffer', {});
                             fs.writeFileSync(CSV_FILE, buffer);
                             loadProducts();
-                            await sock.sendMessage(jid, { text: '📦 Products updated!' });
+                            await sendTrackedMessage(jid, '📦 Products updated!');
                             return;
                         }
                     } catch (docErr) {
@@ -205,26 +266,30 @@ async function startBot(fingerprintIndex = 0) {
                     }
                 }
 
-                if (text === 'hello' || text === 'menu') {
+                if (isBotPaused || pausedChats.has(jid)) {
+                    return;
+                }
+
+                if (normalizedText === 'hello' || normalizedText === 'menu') {
                     let menu = '*Our Catalog:*\n\n';
                     products.forEach((p) => {
                         menu += `*ID ${p.ID}*: ${p.Name} - ${p.Price}\n`;
                     });
-                    await sock.sendMessage(jid, { text: menu });
-                } else if (text.startsWith('buy ')) {
-                    const parts = text.split(' ');
+                    await sendTrackedMessage(jid, menu);
+                } else if (normalizedText.startsWith('buy ')) {
+                    const parts = normalizedText.split(' ');
                     const id = parts[1];
                     const qty = parseInt(parts[2], 10) || 1;
                     const product = products.find((p) => p.ID === id);
                     if (product) {
                         if (!userCarts[jid]) userCarts[jid] = [];
                         userCarts[jid].push({ ...product, qty });
-                        await sock.sendMessage(jid, { text: `✅ Added ${qty} x ${product.Name}.` });
+                        await sendTrackedMessage(jid, `✅ Added ${qty} x ${product.Name}.`);
                     }
-                } else if (text === 'checkout') {
+                } else if (normalizedText === 'checkout') {
                     const cart = userCarts[jid];
                     if (!cart || cart.length === 0) {
-                        await sock.sendMessage(jid, { text: 'Cart empty.' });
+                        await sendTrackedMessage(jid, 'Cart empty.');
                         return;
                     }
                     let total = 0;
@@ -235,18 +300,18 @@ async function startBot(fingerprintIndex = 0) {
                         summary += `- ${i.Name} (x${i.qty}): ${sub.toFixed(2)}\n`;
                     });
                     summary += `\n*Total: ${total.toFixed(2)}*`;
-                    await sock.sendMessage(jid, { text: summary });
+                    await sendTrackedMessage(jid, summary);
                     delete userCarts[jid];
                 } else {
-                    const learnedReply = generateLearnedReply(text);
+                    const learnedReply = generateLearnedReply(normalizedText);
                     if (learnedReply) {
-                        await sock.sendMessage(jid, { text: learnedReply });
+                        await sendTrackedMessage(jid, learnedReply);
                         return;
                     }
 
                     const openAIReply = await generateOpenAIReply(text);
                     if (openAIReply) {
-                        await sock.sendMessage(jid, { text: openAIReply });
+                        await sendTrackedMessage(jid, openAIReply);
                     }
                 }
             } catch (err) {
@@ -274,6 +339,9 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function requireApiToken(req, res, next) {
+    if (req.path.startsWith('/admin') && !ADMIN_API_TOKEN) {
+        return res.status(503).json({ error: 'ADMIN_API_TOKEN must be configured for admin APIs.' });
+    }
     if (!ADMIN_API_TOKEN) return next();
     const provided = req.get('x-admin-token');
     if (provided !== ADMIN_API_TOKEN) {
@@ -315,8 +383,68 @@ app.get('/api/dashboard/state', readRateLimiter, (_req, res) => {
         openai: {
             enabled: Boolean(openaiClient),
             model: OPENAI_MODEL
+        },
+        admin: {
+            paused: isBotPaused,
+            pausedChats: Array.from(pausedChats),
+            chatCount: chatLog.size
         }
     });
+});
+
+app.get('/api/admin/chats', readRateLimiter, (_req, res) => {
+    res.json({
+        conversations: getConversationSummaries(),
+        paused: isBotPaused,
+        pausedChats: Array.from(pausedChats)
+    });
+});
+
+app.get('/api/admin/chats/:jid', readRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    if (!jid) return res.status(400).json({ error: 'Missing jid.' });
+    res.json({
+        jid,
+        paused: pausedChats.has(jid),
+        messages: chatLog.get(jid) || []
+    });
+});
+
+app.post('/api/admin/pause', writeRateLimiter, (_req, res) => {
+    isBotPaused = true;
+    res.json({ message: 'Bot paused globally.', paused: true });
+});
+
+app.post('/api/admin/resume', writeRateLimiter, (_req, res) => {
+    isBotPaused = false;
+    res.json({ message: 'Bot resumed globally.', paused: false });
+});
+
+app.post('/api/admin/chats/:jid/pause', writeRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    if (!jid) return res.status(400).json({ error: 'Missing jid.' });
+    pausedChats.add(jid);
+    res.json({ message: `Chat ${jid} paused.`, jid, paused: true });
+});
+
+app.post('/api/admin/chats/:jid/resume', writeRateLimiter, (req, res) => {
+    const jid = String(req.params.jid || '').trim();
+    if (!jid) return res.status(400).json({ error: 'Missing jid.' });
+    pausedChats.delete(jid);
+    res.json({ message: `Chat ${jid} resumed.`, jid, paused: false });
+});
+
+app.post('/api/admin/send', writeRateLimiter, async (req, res) => {
+    const jid = String(req.body?.jid || '').trim();
+    const text = String(req.body?.text || '').trim();
+    if (!jid || !text) return res.status(400).json({ error: 'jid and text are required.' });
+
+    try {
+        await sendTrackedMessage(jid, text, 'admin');
+        return res.json({ message: 'Message sent.', jid });
+    } catch (error) {
+        return res.status(503).json({ error: 'Bot is not connected right now.' });
+    }
 });
 
 app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (req, res) => {
@@ -373,13 +501,17 @@ app.use((err, _req, res, next) => {
         return res.status(400).json({ error: 'Backup file too large (max 5MB).' });
     }
     if (err) {
+        console.error('❌ API error:', err);
         return res.status(500).json({ error: 'Unexpected server error.' });
     }
-    return next();
+    return next(err);
 });
 
 app.listen(PORT, () => {
     console.log(`📡 Web server listening on port ${PORT}`);
     console.log('🔗 Dashboard available at /dashboard');
+    if (!ADMIN_API_TOKEN) {
+        console.warn('⚠️ ADMIN_API_TOKEN is not set. Admin APIs are currently unprotected.');
+    }
     startBot(0);
 });
