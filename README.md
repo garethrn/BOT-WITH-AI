@@ -287,3 +287,15 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
 - `POST /api/meta/connect-later` – store future Meta connection intent
+
+## Product CSV pricing behavior
+
+- The bot now supports the `garethrn-patch-1` style product CSV (fixed pricing and `sqm` pricing in the same file).
+- CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
+- Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`.
+- Customer quote flow:
+  - `menu` to browse
+  - `products <keyword>` to search
+  - `buy <id> <qty>` for fixed-price items
+  - `buy <id> <qty> <width>x<height>` for `sqm` items (mm)
+  - `cart` and `checkout`, then `confirm` to submit

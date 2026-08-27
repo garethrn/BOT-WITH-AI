@@ -12,6 +12,7 @@ const pino = require('pino');
 const nodemailer = require('nodemailer');
 const qrcodeImg = require('qrcode');
 const path = require('path');
+const { Readable } = require('stream');
 const express = require('express');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
@@ -74,6 +75,26 @@ let orders = [];
 let contactNames = {};
 let conversationTabOverrides = {};
 
+const PRODUCT_FIELD_ALIASES = {
+    ID: ['ID', 'ProductID', 'Code'],
+    SKU: ['SKU', 'Sku', 'ProductSKU'],
+    Category: ['Category', 'Department'],
+    Subcategory: ['Subcategory', 'Sub Category', 'Product Type', 'Type'],
+    Name: ['Name', 'Product', 'Product Name', 'Item Name', 'Description'],
+    Size: ['Size', 'Dimensions'],
+    Finish: ['Finish', 'Material'],
+    SingleOrDoubleSided: ['SingleOrDoubleSided', 'Single Or Double Sided', 'Sides'],
+    UnitsPerProduct: ['UnitsPerProduct', 'Units Per Product', 'Pack Size', 'Quantity', 'Qty'],
+    PriceType: ['PriceType', 'Price Type', 'Pricing Type'],
+    PricePerSqm: ['PricePerSqm', 'Price Per Sqm', 'Sqm Price'],
+    FixedPrice: ['FixedPrice', 'Fixed Price', 'Price', 'Selling Price', 'Unit Price', 'Amount'],
+    MinPrice: ['MinPrice', 'Minimum Price'],
+    DesignFee: ['DesignFee', 'Design Fee'],
+    PolePrice: ['PolePrice', 'Pole Price'],
+    InstallationFee: ['InstallationFee', 'Installation Fee'],
+    Aliases: ['Aliases', 'Alias', 'Keywords', 'Tags']
+};
+
 function loadJsonFile(filePath, fallbackValue) {
     try {
         if (!fs.existsSync(filePath)) return fallbackValue;
@@ -88,6 +109,137 @@ function saveJsonFile(filePath, value) {
     fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
 }
 
+function toNumber(value, fallback = 0) {
+    const normalized = String(value ?? '')
+        .replace(/[^\d,.-]+/g, '')
+        .replace(/,/g, '');
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatCurrency(value) {
+    return `R${toNumber(value).toFixed(2)}`;
+}
+
+function normalizeCsvHeader(header) {
+    return String(header || '')
+        .replace(/^\uFEFF/, '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function getFirstMappedValue(row, fieldName) {
+    const normalizedRow = Object.entries(row || {}).reduce((acc, [key, value]) => {
+        acc[normalizeCsvHeader(key)] = value;
+        return acc;
+    }, {});
+    const aliases = PRODUCT_FIELD_ALIASES[fieldName] || [fieldName];
+    for (const alias of aliases) {
+        const value = normalizedRow[normalizeCsvHeader(alias)];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return String(value).trim();
+        }
+    }
+    return '';
+}
+
+function normalizeProductRecord(row) {
+    const product = {
+        ID: getFirstMappedValue(row, 'ID'),
+        SKU: getFirstMappedValue(row, 'SKU'),
+        Category: getFirstMappedValue(row, 'Category'),
+        Subcategory: getFirstMappedValue(row, 'Subcategory'),
+        Name: getFirstMappedValue(row, 'Name'),
+        Size: getFirstMappedValue(row, 'Size'),
+        Finish: getFirstMappedValue(row, 'Finish'),
+        SingleOrDoubleSided: getFirstMappedValue(row, 'SingleOrDoubleSided'),
+        UnitsPerProduct: getFirstMappedValue(row, 'UnitsPerProduct'),
+        PriceType: getFirstMappedValue(row, 'PriceType').toLowerCase(),
+        PricePerSqm: getFirstMappedValue(row, 'PricePerSqm'),
+        FixedPrice: getFirstMappedValue(row, 'FixedPrice'),
+        MinPrice: getFirstMappedValue(row, 'MinPrice'),
+        DesignFee: getFirstMappedValue(row, 'DesignFee'),
+        PolePrice: getFirstMappedValue(row, 'PolePrice'),
+        InstallationFee: getFirstMappedValue(row, 'InstallationFee'),
+        Aliases: getFirstMappedValue(row, 'Aliases')
+    };
+
+    if (!product.Name) product.Name = product.Subcategory || product.Category || 'Product';
+    if (product.PriceType !== 'sqm' && product.PriceType !== 'fixed') {
+        product.PriceType = product.PricePerSqm ? 'sqm' : 'fixed';
+    }
+    return product;
+}
+
+function parseProductsCsvStream(stream) {
+    return new Promise((resolve, reject) => {
+        const rows = [];
+        stream
+            .pipe(csv({ mapHeaders: ({ header }) => String(header || '').replace(/^\uFEFF/, '').trim() }))
+            .on('data', (row) => rows.push(row))
+            .on('error', reject)
+            .on('end', () => {
+                const normalizedProducts = rows.map((row) => normalizeProductRecord(row)).filter(Boolean);
+                const validProducts = normalizedProducts.filter((product) => {
+                    const hasName = Boolean((product.Name || '').trim());
+                    const hasPrice = toNumber(product.FixedPrice) > 0 || toNumber(product.PricePerSqm) > 0;
+                    return hasName && hasPrice;
+                });
+                if (validProducts.length === 0) {
+                    reject(new Error('No valid product rows found in CSV.'));
+                    return;
+                }
+                resolve(validProducts);
+            });
+    });
+}
+
+function parseUnitsPerProduct(value) {
+    const match = String(value || '').match(/\d+/);
+    const parsed = match ? parseInt(match[0], 10) : 1;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function calculateFixedPrice(product, qty) {
+    const unitsPerPack = parseUnitsPerProduct(product.UnitsPerProduct);
+    const packPrice = toNumber(product.FixedPrice);
+    const packs = Math.ceil(qty / unitsPerPack);
+    return { total: packs * packPrice, unitsPerPack, packs };
+}
+
+function calculateSqmPrice(product, qty, widthMm, heightMm) {
+    const sqm = (widthMm / 1000) * (heightMm / 1000);
+    const raw = sqm * toNumber(product.PricePerSqm) * qty;
+    const minTotal = toNumber(product.MinPrice) * qty;
+    return { total: Math.max(raw, minTotal), sqmPerUnit: sqm };
+}
+
+function getProductDisplayPrice(product) {
+    if (String(product.PriceType || '').toLowerCase() === 'sqm') {
+        const minPrice = toNumber(product.MinPrice);
+        const minText = minPrice > 0 ? ` (min ${formatCurrency(minPrice)})` : '';
+        return `${formatCurrency(product.PricePerSqm)}/m²${minText}`;
+    }
+    const unitsPerPack = parseUnitsPerProduct(product.UnitsPerProduct);
+    const unitText = unitsPerPack > 1 ? `/${unitsPerPack} units` : '/unit';
+    return `${formatCurrency(product.FixedPrice)}${unitText}`;
+}
+
+function buildProductLine(product, index) {
+    const name = product.Name || product.Subcategory || product.Category || `Product ${index + 1}`;
+    return `${index + 1}. [${product.ID || '?'}] ${name} — ${getProductDisplayPrice(product)}`;
+}
+
+function parseDimensionsFromText(text) {
+    const values = String(text || '').match(/\d+(?:\.\d+)?/g);
+    if (!values || values.length < 2) return null;
+    const widthMm = parseFloat(values[0]);
+    const heightMm = parseFloat(values[1]);
+    if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) return null;
+    return { widthMm, heightMm };
+}
+
 learningLeads = loadJsonFile(LEADS_FILE, []);
 orders = loadJsonFile(ORDERS_FILE, []);
 contactNames = loadJsonFile(CONTACTS_FILE, {});
@@ -99,20 +251,13 @@ function getRetryDelay(count) {
 }
 
 function loadProducts() {
-    return new Promise((resolve, reject) => {
-        const results = [];
-        if (!fs.existsSync(CSV_FILE)) {
-            fs.writeFileSync(CSV_FILE, 'ID,Name,Price\n1,Demo Item,10.00');
-        }
-        fs.createReadStream(CSV_FILE)
-            .pipe(csv())
-            .on('data', (d) => results.push(d))
-            .on('end', () => {
-                products = results;
-                console.log('✅ Inventory Loaded');
-                resolve(results);
-            })
-            .on('error', reject);
+    if (!fs.existsSync(CSV_FILE)) {
+        fs.writeFileSync(CSV_FILE, 'ID,Category,Subcategory,Name,PriceType,FixedPrice,PricePerSqm,MinPrice,UnitsPerProduct\n1,General,General,Demo Item,fixed,10.00,0,0,1\n');
+    }
+    return parseProductsCsvStream(fs.createReadStream(CSV_FILE)).then((results) => {
+        products = results;
+        console.log(`✅ Inventory Loaded (${products.length} products)`);
+        return results;
     });
 }
 loadProducts().catch((error) => {
@@ -166,10 +311,10 @@ function recordOrder(jid, cart, total) {
         id: `ord_${Date.now()}`,
         jid,
         items: Array.isArray(cart) ? cart.map((item) => ({
-            id: item.ID,
-            name: item.Name,
+            id: item.id || item.ID,
+            name: item.name || item.Name || 'Product',
             qty: item.qty,
-            price: item.Price
+            price: toNumber(item.price || item.Price || item.total || 0)
         })) : [],
         total: Number(total.toFixed(2)),
         status: 'quoted',
@@ -406,21 +551,116 @@ async function startBot(fingerprintIndex = 0) {
                 }
 
                 if (normalizedText === 'hello' || normalizedText === 'menu') {
-                    let menu = '*Our Catalog:*\n\n';
-                    products.forEach((p) => {
-                        menu += `*ID ${p.ID}*: ${p.Name} - ${p.Price}\n`;
-                    });
+                    const categories = [...new Set(products.map((p) => p.Category).filter(Boolean))];
+                    const sample = products.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
+                    const menu = [
+                        '*📦 Product Catalogue*',
+                        categories.length ? `Categories: ${categories.join(', ')}` : '',
+                        '',
+                        sample || 'No products loaded yet.',
+                        products.length > 25 ? `\n...and ${products.length - 25} more products.` : '',
+                        '',
+                        '*Commands:*',
+                        '- products <name/category> (search products)',
+                        '- buy <product-id> <qty> (fixed-price products)',
+                        '- buy <product-id> <qty> <width_mm>x<height_mm> (sqm products)',
+                        '- cart',
+                        '- checkout'
+                    ].filter(Boolean).join('\n');
                     await sendTrackedMessage(jid, menu);
+                } else if (normalizedText.startsWith('products ')) {
+                    const keyword = normalizedText.replace(/^products\s+/, '').trim();
+                    const matches = products.filter((product) =>
+                        [product.ID, product.Name, product.Category, product.Subcategory, product.Aliases]
+                            .map((value) => String(value || '').toLowerCase())
+                            .some((value) => value.includes(keyword))
+                    );
+                    if (!matches.length) {
+                        await sendTrackedMessage(jid, `No products found for "${keyword}".`);
+                        return;
+                    }
+                    const result = matches.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
+                    await sendTrackedMessage(jid, `*Matches for "${keyword}"*\n\n${result}${matches.length > 25 ? `\n\n...and ${matches.length - 25} more.` : ''}`);
+                } else if (normalizedText === 'cart') {
+                    const cart = userCarts[jid];
+                    if (!cart || cart.length === 0) {
+                        await sendTrackedMessage(jid, '🛒 Your cart is empty.');
+                        return;
+                    }
+                    let total = 0;
+                    const lines = cart.map((item, index) => {
+                        total += item.total;
+                        const parts = [`${index + 1}. ${item.name} (x${item.qty})`];
+                        if (item.dimensions) parts.push(`[${item.dimensions}]`);
+                        parts.push(`= ${formatCurrency(item.total)}`);
+                        return parts.join(' ');
+                    });
+                    await sendTrackedMessage(jid, `*🛒 Cart*\n\n${lines.join('\n')}\n\n*Total:* ${formatCurrency(total)}\nType *checkout* to confirm.`);
                 } else if (normalizedText.startsWith('buy ')) {
-                    const parts = normalizedText.split(' ');
+                    const parts = text.trim().split(/\s+/);
                     const id = parts[1];
                     const qty = parseInt(parts[2], 10) || 1;
-                    const product = products.find((p) => p.ID === id);
-                    if (product) {
-                        if (!userCarts[jid]) userCarts[jid] = [];
-                        userCarts[jid].push({ ...product, qty });
-                        await sendTrackedMessage(jid, `✅ Added ${qty} x ${product.Name}.`);
+                    const product = products.find((p) => String(p.ID).toLowerCase() === String(id).toLowerCase());
+                    if (!product) {
+                        await sendTrackedMessage(jid, 'Product not found. Use *products <keyword>* or *menu*.');
+                        return;
                     }
+                    if (qty <= 0) {
+                        await sendTrackedMessage(jid, 'Quantity must be greater than zero.');
+                        return;
+                    }
+
+                    let pricing;
+                    let dimensionsLabel = '';
+                    if (String(product.PriceType || '').toLowerCase() === 'sqm') {
+                        const dimText = parts.slice(3).join(' ');
+                        const dimensions = parseDimensionsFromText(dimText);
+                        if (!dimensions) {
+                            await sendTrackedMessage(
+                                jid,
+                                `This product is priced per square meter.\nUse: *buy ${product.ID} ${qty} 1200x600*`
+                            );
+                            return;
+                        }
+                        pricing = calculateSqmPrice(product, qty, dimensions.widthMm, dimensions.heightMm);
+                        dimensionsLabel = `${dimensions.widthMm}x${dimensions.heightMm}mm`;
+                    } else {
+                        pricing = calculateFixedPrice(product, qty);
+                    }
+
+                    const designFee = toNumber(product.DesignFee) * qty;
+                    const polesCost = toNumber(product.PolePrice) * qty;
+                    const installationFee = toNumber(product.InstallationFee) * qty;
+                    const materialTotal = pricing.total;
+                    const total = materialTotal + designFee + polesCost + installationFee;
+
+                    if (!userCarts[jid]) userCarts[jid] = [];
+                    userCarts[jid].push({
+                        id: product.ID,
+                        name: product.Name,
+                        qty,
+                        dimensions: dimensionsLabel,
+                        materialTotal,
+                        designFee,
+                        polesCost,
+                        installationFee,
+                        total,
+                        priceType: product.PriceType
+                    });
+
+                    const quoteLines = [
+                        `✅ Added *${product.Name}* to cart.`,
+                        `Quantity: ${qty}`,
+                        dimensionsLabel ? `Size: ${dimensionsLabel}` : '',
+                        `Material: ${formatCurrency(materialTotal)}`,
+                        designFee > 0 ? `Design fee: ${formatCurrency(designFee)}` : '',
+                        polesCost > 0 ? `Pole fee: ${formatCurrency(polesCost)}` : '',
+                        installationFee > 0 ? `Installation fee: ${formatCurrency(installationFee)}` : '',
+                        `*Item total: ${formatCurrency(total)}*`,
+                        '',
+                        'Reply *cart* to review or *checkout* to confirm pricing.'
+                    ].filter(Boolean);
+                    await sendTrackedMessage(jid, quoteLines.join('\n'));
                 } else if (normalizedText === 'checkout') {
                     const cart = userCarts[jid];
                     if (!cart || cart.length === 0) {
@@ -428,16 +668,30 @@ async function startBot(fingerprintIndex = 0) {
                         return;
                     }
                     let total = 0;
-                    let summary = '*Order Review:*\n';
-                    cart.forEach((i) => {
-                        const sub = parseFloat(i.Price) * i.qty;
-                        total += sub;
-                        summary += `- ${i.Name} (x${i.qty}): ${sub.toFixed(2)}\n`;
+                    let summary = '*📋 Order Summary:*\n\n';
+                    cart.forEach((item, index) => {
+                        total += item.total;
+                        summary += `${index + 1}. *${item.name}*`;
+                        if (item.dimensions) summary += ` (${item.dimensions})`;
+                        summary += ` ×${item.qty}\n`;
+                        summary += `   Material: ${formatCurrency(item.materialTotal)}\n`;
+                        if (item.designFee > 0) summary += `   Design: ${formatCurrency(item.designFee)}\n`;
+                        if (item.polesCost > 0) summary += `   Poles: ${formatCurrency(item.polesCost)}\n`;
+                        if (item.installationFee > 0) summary += `   Installation: ${formatCurrency(item.installationFee)}\n`;
+                        summary += `   *Item Total: ${formatCurrency(item.total)}*\n\n`;
                     });
-                    summary += `\n*Total: ${total.toFixed(2)}*`;
+                    summary += `*Grand Total: ${formatCurrency(total)}*\n\nReply with *confirm* to submit your order.`;
                     await sendTrackedMessage(jid, summary);
+                } else if (normalizedText === 'confirm') {
+                    const cart = userCarts[jid];
+                    if (!cart || cart.length === 0) {
+                        await sendTrackedMessage(jid, 'No pending checkout. Type *menu* to start.');
+                        return;
+                    }
+                    const total = cart.reduce((sum, item) => sum + toNumber(item.total), 0);
                     recordOrder(jid, cart, total);
                     delete userCarts[jid];
+                    await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                 } else {
                     const learnedReply = generateLearnedReply(normalizedText);
                     if (learnedReply) {
@@ -586,7 +840,7 @@ app.get('/api/admin/orders', readRateLimiter, (_req, res) => {
 
 app.get('/api/admin/products/export', readRateLimiter, (_req, res) => {
     if (!fs.existsSync(CSV_FILE)) {
-        fs.writeFileSync(CSV_FILE, 'ID,Name,Price\n1,Demo Item,10.00');
+        fs.writeFileSync(CSV_FILE, 'ID,Category,Subcategory,Name,PriceType,FixedPrice,PricePerSqm,MinPrice,UnitsPerProduct\n1,General,General,Demo Item,fixed,10.00,0,0,1\n');
     }
     res.download(CSV_FILE, 'products.csv');
 });
@@ -603,17 +857,24 @@ app.post('/api/admin/products/upload', writeRateLimiter, productsCsvUpload.singl
     const headerCells = content
         .split(/\r?\n/)[0]
         .split(',')
-        .map((cell) => cell.trim().replace(/^"|"$/g, '').toLowerCase());
-    if (!headerCells.includes('id') || !headerCells.includes('name') || !headerCells.includes('price')) {
-        return res.status(400).json({ error: 'CSV header must include ID, Name, Price.' });
+        .map((cell) => normalizeCsvHeader(cell.trim().replace(/^"|"$/g, '')));
+    const hasId = headerCells.includes(normalizeCsvHeader('ID'));
+    const hasName = headerCells.includes(normalizeCsvHeader('Name')) || headerCells.includes(normalizeCsvHeader('Subcategory'));
+    const hasPrice =
+        headerCells.includes(normalizeCsvHeader('FixedPrice')) ||
+        headerCells.includes(normalizeCsvHeader('PricePerSqm')) ||
+        headerCells.includes(normalizeCsvHeader('Price'));
+    if (!hasId || !hasName || !hasPrice) {
+        return res.status(400).json({ error: 'CSV header must include ID plus Name/Subcategory and FixedPrice/PricePerSqm (or Price).' });
     }
 
     try {
         fs.writeFileSync(CSV_FILE, content.endsWith('\n') ? content : `${content}\n`);
+        await parseProductsCsvStream(Readable.from([content]));
         await loadProducts();
         return res.json({ message: 'Products CSV uploaded successfully.', products: products.length });
     } catch (error) {
-        return res.status(500).json({ error: 'Failed to import products CSV.' });
+        return res.status(500).json({ error: error.message || 'Failed to import products CSV.' });
     }
 });
 
