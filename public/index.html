@@ -256,7 +256,7 @@
       const text = String(msg?.text || '').trim().toLowerCase();
       if (!text) return true;
       if (text === '[non-text message]') return true;
-      if (/^(status|state|connection)\b/.test(text)) return true;
+      if (/^(status|state|connection)\s*:/.test(text)) return true;
       if (/^(bot paused globally|bot resumed globally|chat .* paused|chat .* resumed)\b/.test(text)) return true;
       return false;
     }
