@@ -99,19 +99,25 @@ function getRetryDelay(count) {
 }
 
 function loadProducts() {
-    const results = [];
-    if (!fs.existsSync(CSV_FILE)) {
-        fs.writeFileSync(CSV_FILE, 'ID,Name,Price\n1,Demo Item,10.00');
-    }
-    fs.createReadStream(CSV_FILE)
-        .pipe(csv())
-        .on('data', (d) => results.push(d))
-        .on('end', () => {
-            products = results;
-            console.log('✅ Inventory Loaded');
-        });
+    return new Promise((resolve, reject) => {
+        const results = [];
+        if (!fs.existsSync(CSV_FILE)) {
+            fs.writeFileSync(CSV_FILE, 'ID,Name,Price\n1,Demo Item,10.00');
+        }
+        fs.createReadStream(CSV_FILE)
+            .pipe(csv())
+            .on('data', (d) => results.push(d))
+            .on('end', () => {
+                products = results;
+                console.log('✅ Inventory Loaded');
+                resolve(results);
+            })
+            .on('error', reject);
+    });
 }
-loadProducts();
+loadProducts().catch((error) => {
+    console.error('❌ Failed to load products:', error);
+});
 
 function logChatMessage(jid, role, text) {
     const cleanJid = String(jid || '').trim();
@@ -476,7 +482,7 @@ function requireApiToken(req, res, next) {
         return res.status(503).json({ error: 'ADMIN_API_TOKEN must be configured for admin, ai, and meta APIs.' });
     }
     if (!ADMIN_API_TOKEN) return next();
-    const provided = req.get('x-admin-token');
+    const provided = req.get('x-admin-token') || String(req.query?.token || '').trim();
     if (provided !== ADMIN_API_TOKEN) {
         return res.status(401).json({ error: 'Unauthorized API request.' });
     }
@@ -498,6 +504,10 @@ const upload = multer({
     })
 });
 const contactsImportUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1024 * 1024 * 5 }
+});
+const productsCsvUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 1024 * 1024 * 5 }
 });
@@ -572,6 +582,39 @@ app.post('/api/admin/conversations/:jid/move', writeRateLimiter, (req, res) => {
 app.get('/api/admin/orders', readRateLimiter, (_req, res) => {
     const sorted = [...orders].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     res.json({ orders: sorted });
+});
+
+app.get('/api/admin/products/export', readRateLimiter, (_req, res) => {
+    if (!fs.existsSync(CSV_FILE)) {
+        fs.writeFileSync(CSV_FILE, 'ID,Name,Price\n1,Demo Item,10.00');
+    }
+    res.download(CSV_FILE, 'products.csv');
+});
+
+app.get('/api/admin/products', readRateLimiter, (_req, res) => {
+    res.json({ products });
+});
+
+app.post('/api/admin/products/upload', writeRateLimiter, productsCsvUpload.single('file'), async (req, res) => {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'Missing CSV file.' });
+    const content = req.file.buffer.toString('utf8').replace(/\uFEFF/g, '').trim();
+    if (!content) return res.status(400).json({ error: 'CSV file is empty.' });
+
+    const headerCells = content
+        .split(/\r?\n/)[0]
+        .split(',')
+        .map((cell) => cell.trim().replace(/^"|"$/g, '').toLowerCase());
+    if (!headerCells.includes('id') || !headerCells.includes('name') || !headerCells.includes('price')) {
+        return res.status(400).json({ error: 'CSV header must include ID, Name, Price.' });
+    }
+
+    try {
+        fs.writeFileSync(CSV_FILE, content.endsWith('\n') ? content : `${content}\n`);
+        await loadProducts();
+        return res.json({ message: 'Products CSV uploaded successfully.', products: products.length });
+    } catch (error) {
+        return res.status(500).json({ error: 'Failed to import products CSV.' });
+    }
 });
 
 app.get('/api/admin/leads', readRateLimiter, (_req, res) => {
@@ -737,7 +780,7 @@ app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {
 
 app.use((err, _req, res, next) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Backup file too large (max 5MB).' });
+        return res.status(400).json({ error: 'Uploaded file too large (max 5MB).' });
     }
     if (err) {
         console.error('❌ API error:', err);

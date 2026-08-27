@@ -175,6 +175,24 @@
           <pre id="leadsPanel">[]</pre>
         </div>
       </div>
+
+      <div class="section two">
+        <div>
+          <h3>Products CSV (Catalog)</h3>
+          <form id="productsUploadForm">
+            <input id="productsCsvFile" type="file" accept=".csv,text/csv" required>
+            <button type="submit">Upload Products CSV</button>
+          </form>
+          <div class="row">
+            <button id="productsExportBtn" type="button">Export Current Products CSV</button>
+          </div>
+          <div id="productsResult" class="mini"></div>
+        </div>
+        <div>
+          <h3>Current Products Preview</h3>
+          <pre id="productsPreview">[]</pre>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -310,6 +328,17 @@
       el('leadsPanel').textContent = JSON.stringify((leadsData.leads || []).slice(0, 20), null, 2);
     }
 
+    async function refreshProductsPreview() {
+      try {
+        const data = await getJson('/api/admin/products');
+        const all = Array.isArray(data.products) ? data.products : [];
+        const rows = all.slice(0, 20);
+        el('productsPreview').textContent = JSON.stringify({ rows, totalRows: all.length }, null, 2);
+      } catch (e) {
+        el('productsPreview').textContent = JSON.stringify({ error: e.message }, null, 2);
+      }
+    }
+
     async function postAction(url, body = {}) {
       const data = await getJson(url, {
         method: 'POST',
@@ -321,6 +350,7 @@
       await refreshChats();
       await refreshContacts();
       await refreshOrdersAndLeads();
+      await refreshProductsPreview();
     }
 
     el('refreshAll').onclick = async () => {
@@ -445,6 +475,41 @@
       } catch (e) { setTopMessage(e.message); }
     });
 
+    el('productsUploadForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const file = el('productsCsvFile').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiFetch('/api/admin/products/upload', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Products upload failed');
+        el('productsResult').textContent = `${data.message} Products loaded: ${data.products}`;
+        await refreshProductsPreview();
+      } catch (e) {
+        el('productsResult').textContent = e.message;
+      }
+    });
+
+    el('productsExportBtn').addEventListener('click', async () => {
+      try {
+        const response = await apiFetch('/api/admin/products/export');
+        if (!response.ok) throw new Error('Products export failed');
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = 'products.csv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(downloadUrl);
+      } catch (e) {
+        el('productsResult').textContent = e.message;
+      }
+    });
+
     (async () => {
       try {
         updateQrLink();
@@ -452,6 +517,7 @@
         await refreshChats();
         await refreshContacts();
         await refreshOrdersAndLeads();
+        await refreshProductsPreview();
       } catch (e) {
         setTopMessage(e.message.includes('Unauthorized') ? 'Unauthorized. Enter ADMIN_API_TOKEN.' : e.message);
       }

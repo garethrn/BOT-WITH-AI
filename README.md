@@ -17,6 +17,7 @@ This repository now contains the **MY WHATSAPP BOT** build with added AI-oriente
 - Admin orders panel and unanswered leads panel
 - Conversation tab/status moving (main/quoted/in-progress/idle/closed/paid/paused)
 - WhatsApp session logout from admin dashboard
+- Products CSV upload and export from admin dashboard
 - "Connect to Meta later" section to save future legal WhatsApp Business integration details
 
 ## Run
@@ -280,6 +281,9 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - `DELETE /api/admin/contacts/:jid` – remove contact name mapping
 - `POST /api/admin/contacts/import` – bulk import contacts file
 - `POST /api/admin/whatsapp/logout` – clear WhatsApp auth and regenerate QR
+- `GET /api/admin/products` – list current loaded products
+- `POST /api/admin/products/upload` – upload/replace products CSV file
+- `GET /api/admin/products/export` – download current products CSV file
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
 - `POST /api/ai/teach` – save teaching instructions
 - `POST /api/meta/connect-later` – store future Meta connection intent
