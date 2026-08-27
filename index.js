@@ -14,6 +14,7 @@ const qrcodeImg = require('qrcode');
 const path = require('path');
 const express = require('express');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const {
     importBackup,
     teachBehavior,
@@ -31,6 +32,7 @@ const BROWSER_FINGERPRINTS = [
 const ADMIN_JID = process.env.ADMIN_JID;
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN;
 
 const STORAGE_DIR = path.join(__dirname, 'storage');
 const BACKUPS_DIR = path.join(STORAGE_DIR, 'backups');
@@ -237,7 +239,21 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+function requireApiToken(req, res, next) {
+    if (!ADMIN_API_TOKEN) return next();
+    const provided = req.get('x-admin-token');
+    if (provided !== ADMIN_API_TOKEN) {
+        return res.status(401).json({ error: 'Unauthorized API request.' });
+    }
+    next();
+}
+
+app.use('/api', requireApiToken);
+const readRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+const writeRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
 const upload = multer({
+    limits: { fileSize: 1024 * 1024 * 5 },
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, BACKUPS_DIR),
         filename: (_req, file, cb) => {
@@ -248,7 +264,7 @@ const upload = multer({
 });
 
 app.get('/', (_req, res) => res.send('Bot is running!'));
-app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/dashboard', readRateLimiter, (_req, res) => res.redirect('/index.html'));
 
 app.get('/qr', (_req, res) => {
     if (!latestQR) {
@@ -258,19 +274,25 @@ app.get('/qr', (_req, res) => {
     res.send(latestQR);
 });
 
-app.get('/api/dashboard/state', (_req, res) => {
+app.get('/api/dashboard/state', readRateLimiter, (_req, res) => {
     res.json({
         status: botConnectionState,
         learned: getDashboardData()
     });
 });
 
-app.post('/api/ai/upload-backup', upload.single('backup'), (req, res) => {
+app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'Missing backup file.' });
     }
 
-    const fileContent = fs.readFileSync(req.file.path, 'utf8');
+    const safePath = path.resolve(BACKUPS_DIR, req.file.filename);
+    const backupDirPath = path.resolve(BACKUPS_DIR);
+    if (!safePath.startsWith(`${backupDirPath}${path.sep}`)) {
+        return res.status(400).json({ error: 'Invalid backup path.' });
+    }
+
+    const fileContent = fs.readFileSync(safePath, 'utf8');
     const result = importBackup(req.file.originalname, fileContent);
     res.json({
         message: 'Backup uploaded and imported for AI learning.',
@@ -278,7 +300,7 @@ app.post('/api/ai/upload-backup', upload.single('backup'), (req, res) => {
     });
 });
 
-app.post('/api/ai/teach', (req, res) => {
+app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
     const instruction = String(req.body?.instruction || '').trim();
     const examples = Array.isArray(req.body?.examples) ? req.body.examples : [];
 
@@ -293,7 +315,7 @@ app.post('/api/ai/teach', (req, res) => {
     });
 });
 
-app.post('/api/meta/connect-later', (req, res) => {
+app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {
     const metaConfig = setMetaConnectionIntent({
         enabled: true,
         businessAccountId: req.body?.businessAccountId,
@@ -305,6 +327,16 @@ app.post('/api/meta/connect-later', (req, res) => {
         message: 'Meta connection option saved for later legal setup.',
         metaConfig
     });
+});
+
+app.use((err, _req, res, next) => {
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Backup file too large (max 5MB).' });
+    }
+    if (err) {
+        return res.status(500).json({ error: 'Unexpected server error.' });
+    }
+    return next();
 });
 
 app.listen(PORT, () => {

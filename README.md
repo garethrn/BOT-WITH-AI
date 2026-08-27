@@ -17,6 +17,8 @@ npm install
 npm start
 ```
 
+Optional security: set `ADMIN_API_TOKEN` and provide it in dashboard/API via `x-admin-token`.
+
 ## Dashboard and API
 
 - `GET /dashboard` – web dashboard

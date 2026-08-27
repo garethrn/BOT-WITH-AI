@@ -20,6 +20,7 @@
 <body>
   <h1>BOT WITH AI Dashboard</h1>
   <p>WhatsApp bot status: <span id="status">Loading...</span> | QR: <a href="/qr" target="_blank">Open /qr</a></p>
+  <p class="help">Optional security token: <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="max-width: 360px;" /></p>
 
   <section>
     <h2>Import WhatsApp Backups for Learning</h2>
@@ -60,9 +61,20 @@
 
   <script>
     const statusEl = document.getElementById('status');
+    const tokenEl = document.getElementById('apiToken');
+
+    async function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (tokenEl.value) headers.set('x-admin-token', tokenEl.value);
+      return fetch(url, { ...options, headers });
+    }
 
     async function refreshState() {
-      const response = await fetch('/api/dashboard/state');
+      const response = await apiFetch('/api/dashboard/state');
+      if (!response.ok) {
+        statusEl.textContent = response.status === 401 ? 'Unauthorized (set token above)' : 'Unavailable';
+        return;
+      }
       const state = await response.json();
       statusEl.textContent = state.status;
     }
@@ -74,7 +86,7 @@
       const formData = new FormData();
       const fileInput = document.getElementById('backup');
       formData.append('backup', fileInput.files[0]);
-      const response = await fetch('/api/ai/upload-backup', { method: 'POST', body: formData });
+      const response = await apiFetch('/api/ai/upload-backup', { method: 'POST', body: formData });
       const data = await response.json();
       resultEl.textContent = response.ok ? `${data.message} Imported rules: ${data.importedRules}` : (data.error || 'Upload failed');
       refreshState();
@@ -85,7 +97,7 @@
       const resultEl = document.getElementById('teachResult');
       resultEl.textContent = 'Saving...';
       const instruction = document.getElementById('instruction').value;
-      const response = await fetch('/api/ai/teach', {
+      const response = await apiFetch('/api/ai/teach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruction })
@@ -104,7 +116,7 @@
         phoneNumberId: document.getElementById('phoneNumberId').value,
         notes: document.getElementById('metaNotes').value
       };
-      const response = await fetch('/api/meta/connect-later', {
+      const response = await apiFetch('/api/meta/connect-later', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
