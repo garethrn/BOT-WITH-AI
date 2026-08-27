@@ -15,6 +15,9 @@
     code { background: #eef2ff; padding: 2px 6px; border-radius: 4px; }
     #status { font-weight: bold; }
     .help { color: #475569; font-size: 0.95rem; }
+    .card-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .mini { font-size: 0.9rem; color: #334155; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 6px; overflow: auto; max-height: 220px; }
   </style>
 </head>
 <body>
@@ -62,10 +65,37 @@
     <div id="metaResult"></div>
   </section>
 
+  <section>
+    <h2>Current Learned Data (Dashboard Summary)</h2>
+    <div class="card-list">
+      <div class="mini">Backups imported: <strong id="backupCount">0</strong></div>
+      <div class="mini">Teaching entries: <strong id="teachingCount">0</strong></div>
+      <div class="mini">Response rules: <strong id="ruleCount">0</strong></div>
+      <div class="mini">Meta setup saved: <strong id="metaSaved">No</strong></div>
+    </div>
+    <h3>Latest backups</h3>
+    <pre id="backupPreview">[]</pre>
+    <h3>Latest teaching instructions</h3>
+    <pre id="teachingPreview">[]</pre>
+    <h3>Sample response rules</h3>
+    <pre id="rulePreview">[]</pre>
+  </section>
+
   <script>
     const statusEl = document.getElementById('status');
     const openaiStatusEl = document.getElementById('openaiStatus');
     const tokenEl = document.getElementById('apiToken');
+    const backupCountEl = document.getElementById('backupCount');
+    const teachingCountEl = document.getElementById('teachingCount');
+    const ruleCountEl = document.getElementById('ruleCount');
+    const metaSavedEl = document.getElementById('metaSaved');
+    const backupPreviewEl = document.getElementById('backupPreview');
+    const teachingPreviewEl = document.getElementById('teachingPreview');
+    const rulePreviewEl = document.getElementById('rulePreview');
+
+    function pretty(value) {
+      return JSON.stringify(value, null, 2);
+    }
 
     async function apiFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
@@ -82,6 +112,21 @@
       const state = await response.json();
       statusEl.textContent = state.status;
       openaiStatusEl.textContent = state.openai?.enabled ? `Enabled (${state.openai.model})` : 'Disabled (set OPENAI_API_KEY)';
+
+      const learned = state.learned || {};
+      const backups = Array.isArray(learned.backups) ? learned.backups : [];
+      const teaching = Array.isArray(learned.teaching) ? learned.teaching : [];
+      const rules = Array.isArray(learned.responseRules) ? learned.responseRules : [];
+      const meta = learned.metaConnection || {};
+
+      backupCountEl.textContent = String(backups.length);
+      teachingCountEl.textContent = String(teaching.length);
+      ruleCountEl.textContent = String(rules.length);
+      metaSavedEl.textContent = meta.enabled ? 'Yes' : 'No';
+
+      backupPreviewEl.textContent = pretty(backups.slice(-5));
+      teachingPreviewEl.textContent = pretty(teaching.slice(-5).map((item) => ({ instruction: item.instruction, createdAt: item.createdAt })));
+      rulePreviewEl.textContent = pretty(rules.slice(0, 15));
     }
 
     document.getElementById('backupForm').addEventListener('submit', async (event) => {
