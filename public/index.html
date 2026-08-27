@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOT WITH AI Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f7f9fc; color: #1f2937; }
+    h1, h2 { margin-bottom: 8px; }
+    section { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-weight: bold; }
+    input, textarea { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { background: #2563eb; color: white; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    code { background: #eef2ff; padding: 2px 6px; border-radius: 4px; }
+    #status { font-weight: bold; }
+    .help { color: #475569; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <h1>BOT WITH AI Dashboard</h1>
+  <p>WhatsApp bot status: <span id="status">Loading...</span> | QR: <a href="/qr" target="_blank">Open /qr</a></p>
+
+  <section>
+    <h2>Import WhatsApp Backups for Learning</h2>
+    <p class="help">Upload exported chats and include lines like <code>hello => Hi! How can I help?</code> or <code>Q:delivery|A:Delivery takes 2 days</code>.</p>
+    <form id="backupForm">
+      <label for="backup">Backup file</label>
+      <input id="backup" name="backup" type="file" accept=".txt,.csv,.json" required />
+      <button type="submit">Upload and Import</button>
+    </form>
+    <div id="backupResult"></div>
+  </section>
+
+  <section>
+    <h2>Teach AI Behavior</h2>
+    <p class="help">Provide rules and guidance on how replies should be handled.</p>
+    <form id="teachForm">
+      <label for="instruction">Teaching instruction</label>
+      <textarea id="instruction" rows="4" placeholder="Example: Always answer politely and confirm order details before checkout." required></textarea>
+      <button type="submit">Save Teaching</button>
+    </form>
+    <div id="teachResult"></div>
+  </section>
+
+  <section>
+    <h2>Meta Legal Integration (Later)</h2>
+    <p class="help">Save a planned configuration for future official Meta WhatsApp Business connection.</p>
+    <form id="metaForm">
+      <label for="businessAccountId">Meta Business Account ID</label>
+      <input id="businessAccountId" type="text" placeholder="Optional" />
+      <label for="phoneNumberId">Phone Number ID</label>
+      <input id="phoneNumberId" type="text" placeholder="Optional" />
+      <label for="metaNotes">Notes</label>
+      <textarea id="metaNotes" rows="3" placeholder="Legal onboarding notes"></textarea>
+      <button type="submit">Save Meta Option</button>
+    </form>
+    <div id="metaResult"></div>
+  </section>
+
+  <script>
+    const statusEl = document.getElementById('status');
+
+    async function refreshState() {
+      const response = await fetch('/api/dashboard/state');
+      const state = await response.json();
+      statusEl.textContent = state.status;
+    }
+
+    document.getElementById('backupForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const resultEl = document.getElementById('backupResult');
+      resultEl.textContent = 'Uploading...';
+      const formData = new FormData();
+      const fileInput = document.getElementById('backup');
+      formData.append('backup', fileInput.files[0]);
+      const response = await fetch('/api/ai/upload-backup', { method: 'POST', body: formData });
+      const data = await response.json();
+      resultEl.textContent = response.ok ? `${data.message} Imported rules: ${data.importedRules}` : (data.error || 'Upload failed');
+      refreshState();
+    });
+
+    document.getElementById('teachForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const resultEl = document.getElementById('teachResult');
+      resultEl.textContent = 'Saving...';
+      const instruction = document.getElementById('instruction').value;
+      const response = await fetch('/api/ai/teach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction })
+      });
+      const data = await response.json();
+      resultEl.textContent = response.ok ? `${data.message} Total teachings: ${data.teachings}` : (data.error || 'Save failed');
+      refreshState();
+    });
+
+    document.getElementById('metaForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const resultEl = document.getElementById('metaResult');
+      resultEl.textContent = 'Saving...';
+      const payload = {
+        businessAccountId: document.getElementById('businessAccountId').value,
+        phoneNumberId: document.getElementById('phoneNumberId').value,
+        notes: document.getElementById('metaNotes').value
+      };
+      const response = await fetch('/api/meta/connect-later', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      resultEl.textContent = response.ok ? data.message : 'Failed to save Meta option';
+      refreshState();
+    });
+
+    refreshState();
+  </script>
+</body>
+</html>
