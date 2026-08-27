@@ -1039,14 +1039,11 @@ app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {
     });
 });
 
-app.use((err, _req, res, next) => {
+app.use((err, _req, res, _next) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'Uploaded file too large (max 5MB).' });
     }
-    if (err) {
-        console.error('❌ API error:', err);
-        return res.status(500).json({ error: 'Unexpected server error.' });
-    }
+    console.error('❌ API error:', err);
     return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
