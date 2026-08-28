@@ -246,7 +246,7 @@ function convertDimensionToMm(value, unit) {
 
 function parseDimensionsFromText(text) {
     const raw = String(text || '').toLowerCase();
-    const directMatch = raw.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?/i);
+    const directMatch = raw.match(/(\d{1,6}(?:\.\d{1,3})?)\s{0,4}(mm|cm|m)?\s{0,4}[x×]\s{0,4}(\d{1,6}(?:\.\d{1,3})?)\s{0,4}(mm|cm|m)?/i);
     if (!directMatch) return null;
     const widthMm = convertDimensionToMm(directMatch[1], directMatch[2]);
     const heightMm = convertDimensionToMm(directMatch[3], directMatch[4] || directMatch[2]);
@@ -514,18 +514,18 @@ function normalizeTextForMatch(value) {
 
 function parseQuantityFromText(text = '', dimensions = null) {
     const raw = String(text || '');
-    const explicit = raw.match(/\b(?:qty|quantity|copies|cards|labels|banners|stickers|units|pieces)\s*[:\-]?\s*(\d{1,6})\b/i);
+    const explicit = raw.match(/\b(?:qty|quantity|copies|cards|labels|banners|stickers|units|pieces)\s{0,3}(?:[:\-]\s{0,3})?(\d{1,6})\b/i);
     if (explicit) {
         const parsed = parseInt(explicit[1], 10);
         if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
-    const prefixed = raw.match(/\b(\d{1,6})\s*(?:copies|cards|labels|banners|stickers|units|pieces)\b/i);
+    const prefixed = raw.match(/\b(\d{1,6})\s{0,3}(?:copies|cards|labels|banners|stickers|units|pieces)\b/i);
     if (prefixed) {
         const parsed = parseInt(prefixed[1], 10);
         if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
 
-    const withoutDimensions = raw.replace(/\b\d+(?:\.\d+)?\s*(?:mm|cm|m)?\s*[x×]\s*\d+(?:\.\d+)?\s*(?:mm|cm|m)?\b/gi, ' ');
+    const withoutDimensions = raw.replace(/\b\d{1,6}(?:\.\d{1,3})?\s{0,4}(?:mm|cm|m)?\s{0,4}[x×]\s{0,4}\d{1,6}(?:\.\d{1,3})?\s{0,4}(?:mm|cm|m)?\b/gi, ' ');
     const values = Array.from(withoutDimensions.matchAll(/\b(\d{2,6})\b/g)).map((m) => parseInt(m[1], 10));
     const candidates = values.filter((num) => Number.isFinite(num) && num > 0);
     if (candidates.length === 0) return null;
@@ -538,8 +538,8 @@ function parseProductRequestDetails(text = '') {
     const quantity = parseQuantityFromText(normalized, dimensions);
 
     let side = '';
-    if (/\b(double|both|2)\s*[- ]?\s*sided\b/.test(normalized)) side = 'double';
-    if (/\b(single|one|1)\s*[- ]?\s*sided\b/.test(normalized)) side = 'single';
+    if (normalized.includes('double sided') || normalized.includes('double-sided') || normalized.includes('both sided') || normalized.includes('both-sided') || normalized.includes('2 sided') || normalized.includes('2-sided')) side = 'double';
+    if (normalized.includes('single sided') || normalized.includes('single-sided') || normalized.includes('one sided') || normalized.includes('one-sided') || normalized.includes('1 sided') || normalized.includes('1-sided')) side = 'single';
 
     const sizeToken = (normalized.match(/\b(a0|a1|a2|a3|a4|a5|a6)\b/) || [])[1] || '';
     const finishOptions = [...new Set(products.map((p) => normalizeTextForMatch(p.Finish)).filter(Boolean))];

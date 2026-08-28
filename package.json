@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "BOT_TEST_MODE=1 node --test"
+    "test": "node --require ./scripts/set-test-env.js --test"
   },
   "engines": {
     "node": ">=22.0.0"
