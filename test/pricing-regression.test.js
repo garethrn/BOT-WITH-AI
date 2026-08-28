@@ -1,8 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-process.env.BOT_TEST_MODE = '1';
-
 const pricing = require('../index');
 
 test('parseDimensionsFromText supports mm, cm, and m units', () => {

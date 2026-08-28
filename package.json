@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "BOT_TEST_MODE=1 node --test"
   },
   "engines": {
     "node": ">=22.0.0"
