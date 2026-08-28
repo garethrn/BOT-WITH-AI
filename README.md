@@ -295,7 +295,8 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 - CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
 - Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`.
 - Customer quote flow:
-  - `menu` to browse
+  - Natural conversation is supported by default (human-like receptionist/sales style)
+  - `menu` now acts as a conversational catalog request (not a command-driven prompt)
   - `products <keyword>` to search
   - `buy <id> <qty>` for fixed-price items
   - `buy <id> <qty> <width>x<height>` for `sqm` items (mm)

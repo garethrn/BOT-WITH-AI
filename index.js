@@ -484,6 +484,70 @@ function getConversationSummaries() {
     return summaries;
 }
 
+function buildProductContextForAI(userText = '') {
+    const normalized = String(userText || '').toLowerCase();
+    const ranked = products.map((product) => {
+        const haystack = [
+            product.ID,
+            product.Name,
+            product.Category,
+            product.Subcategory,
+            product.Aliases
+        ].map((value) => String(value || '').toLowerCase()).join(' ');
+
+        let score = 0;
+        const tokens = normalized.split(/\s+/).filter(Boolean);
+        for (const token of tokens) {
+            if (token.length < 2) continue;
+            if (haystack.includes(token)) score += 1;
+        }
+        return { product, score };
+    });
+
+    ranked.sort((a, b) => b.score - a.score);
+    const top = ranked
+        .filter((item) => item.score > 0)
+        .slice(0, 12)
+        .map((item) => item.product);
+
+    const fallback = top.length ? top : products.slice(0, 12);
+    if (!fallback.length) return 'No product catalog loaded.';
+
+    return fallback.map((product) => {
+        const name = product.Name || product.Subcategory || product.Category || 'Product';
+        const pricing = String(product.PriceType || '').toLowerCase() === 'sqm'
+            ? `${formatCurrency(product.PricePerSqm)}/m²${toNumber(product.MinPrice) > 0 ? ` (min ${formatCurrency(product.MinPrice)})` : ''}`
+            : `${formatCurrency(product.FixedPrice)}${parseUnitsPerProduct(product.UnitsPerProduct) > 1 ? ` per ${parseUnitsPerProduct(product.UnitsPerProduct)} units` : ' per unit'}`;
+        return `- ID ${product.ID}: ${name} | ${pricing}`;
+    }).join('\n');
+}
+
+function buildConversationalFallback(userText = '') {
+    const prompt = String(userText || '').toLowerCase();
+    const shortlist = buildProductContextForAI(userText)
+        .split('\n')
+        .slice(0, 3)
+        .join('\n');
+
+    if (prompt.includes('price') || prompt.includes('quote') || prompt.includes('cost')) {
+        return [
+            'Absolutely, I can help with pricing.',
+            'Please share the product, quantity, and size (if needed), and I’ll prepare your quote.',
+            '',
+            'Here are a few matching options from our catalog:',
+            shortlist
+        ].join('\n');
+    }
+
+    return [
+        'Hi 👋 Thanks for your message — I can help with product advice, pricing, and quotes.',
+        'Tell me what you need (product type, quantity, and size if applicable), and I’ll assist like a sales consultant.',
+        '',
+        'Popular catalog options:',
+        shortlist
+    ].join('\n');
+}
+
 async function sendTrackedMessage(jid, text, role = 'bot') {
     if (!botSocket) throw new Error('WhatsApp socket not ready');
     await botSocket.sendMessage(jid, { text });
@@ -496,13 +560,25 @@ async function generateOpenAIReply(userText) {
     if (!trimmed) return null;
 
     try {
+        const productContext = buildProductContextForAI(trimmed);
         const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
             messages: [
-                { role: 'system', content: buildOpenAISystemPrompt() },
+                {
+                    role: 'system',
+                    content: [
+                        buildOpenAISystemPrompt(),
+                        'You are a human-like WhatsApp receptionist and sales consultant.',
+                        'Do not tell the customer to "type menu".',
+                        'Use the product catalog below as the source of truth for products and pricing.',
+                        'Ask clarifying questions naturally when details are missing.',
+                        'When pricing is requested, reference relevant items and pricing from the catalog context.',
+                        `Catalog context:\n${productContext}`
+                    ].join('\n\n')
+                },
                 { role: 'user', content: trimmed.slice(0, 1000) }
             ],
-            max_tokens: 250
+            max_tokens: 320
         });
 
         const reply = completion.choices?.[0]?.message?.content
@@ -688,23 +764,15 @@ async function startBot(fingerprintIndex = 0) {
                     if (!text) continue;
 
                     if (normalizedText === 'hello' || normalizedText === 'menu') {
-                        const categories = [...new Set(products.map((p) => p.Category).filter(Boolean))];
-                        const sample = products.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
-                        const menu = [
-                            '*📦 Product Catalogue*',
-                            categories.length ? `Categories: ${categories.join(', ')}` : '',
-                            '',
-                            sample || 'No products loaded yet.',
-                            products.length > 25 ? `\n...and ${products.length - 25} more products.` : '',
-                            '',
-                            '*Commands:*',
-                            '- products <name/category> (search products)',
-                            '- buy <product-id> <qty> (fixed-price products)',
-                            '- buy <product-id> <qty> <width_mm>x<height_mm> (sqm products)',
-                            '- cart',
-                            '- checkout'
-                        ].filter(Boolean).join('\n');
-                        await sendTrackedMessage(jid, menu);
+                        const greetInput = normalizedText === 'menu'
+                            ? 'Customer asked to view products and pricing.'
+                            : text;
+                        const aiGreeting = await generateOpenAIReply(greetInput);
+                        if (aiGreeting) {
+                            await sendTrackedMessage(jid, aiGreeting);
+                        } else {
+                            await sendTrackedMessage(jid, buildConversationalFallback(greetInput));
+                        }
                     } else if (normalizedText.startsWith('products ')) {
                         const keyword = normalizedText.replace(/^products\s+/, '').trim();
                         const matches = products.filter((product) =>
@@ -739,7 +807,7 @@ async function startBot(fingerprintIndex = 0) {
                         const qty = parseInt(parts[2], 10) || 1;
                         const product = products.find((p) => String(p.ID).toLowerCase() === String(id).toLowerCase());
                         if (!product) {
-                            await sendTrackedMessage(jid, 'Product not found. Use *products <keyword>* or *menu*.');
+                            await sendTrackedMessage(jid, 'I can’t find that product ID right now. Tell me the product name you need and I’ll help you find the right option and price.');
                             continue;
                         }
                         if (qty <= 0) {
@@ -822,7 +890,7 @@ async function startBot(fingerprintIndex = 0) {
                     } else if (normalizedText === 'confirm') {
                         const cart = userCarts[jid];
                         if (!cart || cart.length === 0) {
-                            await sendTrackedMessage(jid, 'No pending checkout. Type *menu* to start.');
+                            await sendTrackedMessage(jid, 'You don’t have a pending quote yet. Tell me what product you need and I’ll prepare pricing for you.');
                             continue;
                         }
                         const total = cart.reduce((sum, item) => sum + toNumber(item.total), 0);
@@ -841,7 +909,7 @@ async function startBot(fingerprintIndex = 0) {
                             await sendTrackedMessage(jid, openAIReply);
                         } else {
                             pushLearningLead(jid, text);
-                            await sendTrackedMessage(jid, 'Thanks for your message 👋 I can help right away. Please send *menu* for products, or share what you need and quantity for a quick quote.');
+                            await sendTrackedMessage(jid, buildConversationalFallback(text));
                         }
                     }
                 } catch (err) {
