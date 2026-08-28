@@ -234,11 +234,21 @@ function buildProductLine(product, index) {
     return `${index + 1}. [${product.ID || '?'}] ${name} — ${getProductDisplayPrice(product)}`;
 }
 
+function convertDimensionToMm(value, unit) {
+    const amount = parseFloat(value);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const normalizedUnit = String(unit || 'mm').toLowerCase();
+    if (normalizedUnit === 'm') return amount * 1000;
+    if (normalizedUnit === 'cm') return amount * 10;
+    return amount;
+}
+
 function parseDimensionsFromText(text) {
-    const values = String(text || '').match(/\d+(?:\.\d+)?/g);
-    if (!values || values.length < 2) return null;
-    const widthMm = parseFloat(values[0]);
-    const heightMm = parseFloat(values[1]);
+    const raw = String(text || '').toLowerCase();
+    const directMatch = raw.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?/i);
+    if (!directMatch) return null;
+    const widthMm = convertDimensionToMm(directMatch[1], directMatch[2]);
+    const heightMm = convertDimensionToMm(directMatch[3], directMatch[4] || directMatch[2]);
     if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) return null;
     return { widthMm, heightMm };
 }
@@ -489,6 +499,13 @@ const PRODUCT_TEXT_STOP_WORDS = new Set([
     'i', 'me', 'my', 'need', 'want', 'for', 'with', 'the', 'and', 'a', 'an', 'to', 'please',
     'quote', 'price', 'pricing', 'cost', 'can', 'you', 'help', 'on', 'of', 'in', 'at'
 ]);
+const FINISH_KEYWORD_PATTERNS = [
+    { pattern: /\blaminat(?:ed|ion)?\b/, value: 'laminated' },
+    { pattern: /\bsemi[\s-]?gloss\b/, value: 'semi gloss' },
+    { pattern: /\bgloss(?:y)?\b/, value: 'gloss' },
+    { pattern: /\bmatte?\b/, value: 'matt' },
+    { pattern: /\buv\b/, value: 'uv' }
+];
 
 function normalizeTextForMatch(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9\sx]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -502,9 +519,7 @@ function parseQuantityFromText(text = '', dimensions = null) {
         if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
 
-    const withoutDimensions = dimensions
-        ? raw.replace(new RegExp(`${dimensions.widthMm}\\s*[x×]\\s*${dimensions.heightMm}`, 'i'), ' ')
-        : raw;
+    const withoutDimensions = raw.replace(/\b\d+(?:\.\d+)?\s*(?:mm|cm|m)?\s*[x×]\s*\d+(?:\.\d+)?\s*(?:mm|cm|m)?\b/gi, ' ');
     const values = Array.from(withoutDimensions.matchAll(/\b(\d{2,6})\b/g)).map((m) => parseInt(m[1], 10));
     const candidates = values.filter((num) => Number.isFinite(num) && num > 0);
     if (candidates.length === 0) return null;
@@ -522,7 +537,13 @@ function parseProductRequestDetails(text = '') {
 
     const sizeToken = (normalized.match(/\b(a0|a1|a2|a3|a4|a5|a6)\b/) || [])[1] || '';
     const finishOptions = [...new Set(products.map((p) => normalizeTextForMatch(p.Finish)).filter(Boolean))];
-    const finish = finishOptions.find((item) => item.length >= 4 && normalized.includes(item)) || '';
+    let finish = finishOptions.find((item) => item.length >= 4 && normalized.includes(item)) || '';
+    if (!finish) {
+        const hintedKeyword = FINISH_KEYWORD_PATTERNS.find((entry) => entry.pattern.test(normalized))?.value;
+        if (hintedKeyword) {
+            finish = finishOptions.find((item) => item.includes(hintedKeyword)) || hintedKeyword;
+        }
+    }
 
     const tokens = normalized
         .split(' ')
