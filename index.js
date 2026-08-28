@@ -50,7 +50,7 @@ const ORDERS_FILE = path.join(STORAGE_DIR, 'orders.json');
 const CONTACTS_FILE = path.join(STORAGE_DIR, 'contacts.json');
 const CONTACT_PHONES_FILE = path.join(STORAGE_DIR, 'contact_phones.json');
 const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
-const MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 350;
+const MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 1000;
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
