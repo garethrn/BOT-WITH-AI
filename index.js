@@ -39,6 +39,7 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const IS_TEST_MODE = process.env.BOT_TEST_MODE === '1';
 
 const STORAGE_DIR = path.join(__dirname, 'storage');
 const BACKUPS_DIR = path.join(STORAGE_DIR, 'backups');
@@ -1560,11 +1561,23 @@ app.use((err, _req, res, _next) => {
     return res.status(500).json({ error: 'Unexpected server error.' });
 });
 
-app.listen(PORT, () => {
-    console.log(`📡 Web server listening on port ${PORT}`);
-    console.log('🔗 Dashboard available at /dashboard');
-    if (!ADMIN_API_TOKEN) {
-        console.warn('⚠️ ADMIN_API_TOKEN is not set. Admin/AI/Meta APIs are blocked until configured.');
-    }
-    startBot(0);
-});
+if (!IS_TEST_MODE) {
+    app.listen(PORT, () => {
+        console.log(`📡 Web server listening on port ${PORT}`);
+        console.log('🔗 Dashboard available at /dashboard');
+        if (!ADMIN_API_TOKEN) {
+            console.warn('⚠️ ADMIN_API_TOKEN is not set. Admin/AI/Meta APIs are blocked until configured.');
+        }
+        startBot(0);
+    });
+}
+
+module.exports = {
+    loadProducts,
+    parseDimensionsFromText,
+    parseQuantityFromText,
+    parseProductRequestDetails,
+    buildCsvPricingReply,
+    selectProductsByQuantityTier,
+    pickBestQuantityTier
+};
