@@ -548,16 +548,23 @@ function buildConversationalFallback(userText = '') {
     ].join('\n');
 }
 
-function buildConversationContextForAI(jid) {
+function buildConversationContextForAI(jid, currentUserText = '') {
     if (!jid) return [];
+    const currentNormalized = String(currentUserText || '').trim().toLowerCase();
     const recent = (chatLog.get(jid) || [])
         .filter((entry) => entry && entry.text)
-        .slice(-8)
+        .slice(-9)
         .map((entry) => ({
             role: entry.role === 'user' ? 'user' : 'assistant',
             content: String(entry.text).slice(0, 700)
         }));
-    return recent;
+    if (recent.length > 0) {
+        const last = recent[recent.length - 1];
+        if (last.role === 'user' && String(last.content || '').trim().toLowerCase() === currentNormalized) {
+            recent.pop();
+        }
+    }
+    return recent.slice(-8);
 }
 
 async function sendTrackedMessage(jid, text, role = 'bot') {
@@ -573,7 +580,7 @@ async function generateOpenAIReply(userText, jid = '') {
 
     try {
         const productContext = buildProductContextForAI(trimmed);
-        const conversationContext = buildConversationContextForAI(jid);
+        const conversationContext = buildConversationContextForAI(jid, trimmed);
         const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
             messages: [
