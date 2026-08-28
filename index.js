@@ -1235,7 +1235,7 @@ const readRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeader
 const writeRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 const upload = multer({
-    limits: { fileSize: 1024 * 1024 * 5 },
+    limits: { fileSize: 1024 * 1024 * 100 },
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, BACKUPS_DIR),
         filename: (_req, file, cb) => {
@@ -1496,11 +1496,14 @@ app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (re
         return res.status(400).json({ error: 'Invalid backup path.' });
     }
 
-    const fileContent = fs.readFileSync(safePath, 'utf8');
+    const fileContent = fs.readFileSync(safePath);
     const trainerName = String(req.body?.trainerName || '').trim();
-    const result = importBackup(req.file.originalname, fileContent, { trainerName });
+    const result = importBackup(req.file.originalname, fileContent, {
+        trainerName,
+        mimeType: req.file.mimetype
+    });
     res.json({
-        message: 'Backup uploaded and imported for AI learning.',
+        message: result.note || 'Backup uploaded and imported for AI learning.',
         ...result
     });
 });

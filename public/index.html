@@ -156,9 +156,10 @@
           <h3>Import WhatsApp Backups for Learning</h3>
           <form id="backupForm">
             <input id="trainerName" name="trainerName" type="text" placeholder="Your name in chat export (optional)">
-            <input id="backup" name="backup" type="file" accept=".txt,.csv,.json" required>
+            <input id="backup" name="backup" type="file" accept=".txt,.csv,.json,.db,.crypt14,.crypt12,.crypt15" required>
             <button type="submit">Upload and Import</button>
           </form>
+          <div class="muted">Supports chat exports (.txt/.json/.csv) and WhatsApp DB backups (.db/.crypt14). For best training extraction from conversations, include your name in <em>trainerName</em>.</div>
           <div id="backupResult" class="mini"></div>
         </div>
         <div>
@@ -584,7 +585,10 @@
         const response = await apiFetch('/api/ai/upload-backup', { method: 'POST', body: formData });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Upload failed');
-        el('backupResult').textContent = `${data.message} Imported: ${data.importedRules} (rules: ${data.structuredRules || 0}, transcript: ${data.transcriptRules || 0})`;
+        const source = data.sourceType ? ` Source: ${data.sourceType}.` : '';
+        const imported = `Imported: ${data.importedRules} (rules: ${data.structuredRules || 0}, transcript: ${data.transcriptRules || 0}, json: ${data.jsonRules || 0}).`;
+        const note = data.note ? ` ${data.note}` : '';
+        el('backupResult').textContent = `${data.message} ${imported}${source}${note}`.trim();
         await refreshDashboardState();
       } catch (e) { el('backupResult').textContent = e.message; }
     });

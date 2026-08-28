@@ -242,7 +242,18 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 
 `POST /api/ai/upload-backup` accepts multipart fields:
 - `backup` (file, required)
-- `trainerName` (optional, used to extract your responses from WhatsApp transcript exports)
+- `trainerName` (optional, used to extract your responses from WhatsApp transcript exports and message dumps)
+
+Supported backup file types for learning import:
+- Readable exports: `.txt`, `.csv`, `.json`
+- WhatsApp DB uploads: `.db`, `.crypt12`, `.crypt14`, `.crypt15`
+
+Notes:
+- `.crypt*` files are encrypted by WhatsApp. The bot now accepts these uploads and attempts safe text extraction for learning.
+- For best learning accuracy, use exported chat text/json plus `trainerName` that matches your sender name in the backup.
+- Teaching instructions can include direct rule lines (for immediate behavior), for example:
+  - `client asks delivery time => Standard turnaround is 2-3 working days`
+  - `Q: do you deliver | A: Yes, we can arrange delivery nationwide`
 
 ### 14) Operational notes
 - Keep `ADMIN_API_TOKEN` enabled in production.
