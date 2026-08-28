@@ -46,6 +46,7 @@ const AUTH_DIR = path.join(STORAGE_DIR, 'auth_info');
 const LEADS_FILE = path.join(STORAGE_DIR, 'learning_leads.json');
 const ORDERS_FILE = path.join(STORAGE_DIR, 'orders.json');
 const CONTACTS_FILE = path.join(STORAGE_DIR, 'contacts.json');
+const CONTACT_PHONES_FILE = path.join(STORAGE_DIR, 'contact_phones.json');
 const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -73,6 +74,7 @@ const MAX_CHAT_MESSAGES = 500;
 let learningLeads = [];
 let orders = [];
 let contactNames = {};
+let contactPhones = {};
 let conversationTabOverrides = {};
 
 const PRODUCT_FIELD_ALIASES = {
@@ -243,6 +245,7 @@ function parseDimensionsFromText(text) {
 learningLeads = loadJsonFile(LEADS_FILE, []);
 orders = loadJsonFile(ORDERS_FILE, []);
 contactNames = loadJsonFile(CONTACTS_FILE, {});
+contactPhones = loadJsonFile(CONTACT_PHONES_FILE, {});
 conversationTabOverrides = loadJsonFile(CONVERSATION_TABS_FILE, {});
 
 function getRetryDelay(count) {
@@ -271,7 +274,7 @@ function logChatMessage(jid, role, text) {
     if (cleanJid.endsWith('@status')) return;
     if (cleanText === '[non-text message]') return;
     if (cleanText.startsWith('Status:')) return;
-    if (!cleanJid.includes('@s.whatsapp.net') && !cleanJid.includes('@lid')) return;
+    if (!isDirectUserJid(cleanJid) && !cleanJid.includes('@lid')) return;
 
     const existing = chatLog.get(cleanJid) || [];
     existing.push({
@@ -334,20 +337,77 @@ function normalizeToJid(value) {
     const input = String(value || '').trim();
     if (!input) return '';
     if (input.includes('@')) return input;
-    const digits = input.replace(/[^\d]/g, '');
+    const digits = normalizeContactPhone(input);
     return digits ? `${digits}@s.whatsapp.net` : '';
 }
 
-function extractPhoneDigits(value) {
-    const input = String(value || '').trim();
-    if (!input) return '';
-    const localPart = input.split('@')[0].split(':')[0];
-    return localPart.replace(/[^\d]/g, '');
+function normalizeContactPhone(raw) {
+    if (!raw) return '';
+    let digits = String(raw).replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('00') && digits.length > 2) digits = digits.slice(2);
+    if (digits.startsWith('0') && digits.length === 10) return `27${digits.slice(1)}`;
+    if (digits.length >= 7 && digits.length <= 15) return digits;
+    return '';
+}
+
+function extractPhoneDigitsFromJid(jid) {
+    const value = String(jid || '').trim();
+    if (!value) return '';
+    const [localPart, domain = ''] = value.split('@');
+    if (domain !== 's.whatsapp.net' && domain !== 'c.us') return '';
+    return normalizeContactPhone(localPart.split(':')[0]);
 }
 
 function phoneFromJid(jid) {
-    const digits = extractPhoneDigits(jid);
+    const explicit = contactPhones[String(jid || '').trim()];
+    const digits = explicit || extractPhoneDigitsFromJid(jid);
     return digits ? `+${digits}` : '';
+}
+
+function isDirectUserJid(jid) {
+    return typeof jid === 'string' && (
+        jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us')
+    );
+}
+
+function isIgnoredChatJid(jid) {
+    return typeof jid === 'string' && (
+        jid === 'status@broadcast' ||
+        jid.endsWith('@g.us') ||
+        jid.endsWith('@newsletter')
+    );
+}
+
+function resolveIncomingJid(key) {
+    const primary = key?.remoteJid || '';
+    const alternate = key?.remoteJidAlt || '';
+    const participant = key?.participant || '';
+    if (isIgnoredChatJid(primary)) return primary;
+    if (isDirectUserJid(primary)) return primary;
+    if (isDirectUserJid(alternate)) return alternate;
+    if (isDirectUserJid(participant)) return participant;
+    return primary || alternate || participant || '';
+}
+
+function extractIncomingMessageText(message) {
+    const payload = message?.ephemeralMessage?.message
+        || message?.viewOnceMessage?.message
+        || message?.viewOnceMessageV2?.message
+        || message?.viewOnceMessageV2Extension?.message
+        || message;
+    const text = payload?.conversation
+        || payload?.extendedTextMessage?.text
+        || payload?.imageMessage?.caption
+        || payload?.videoMessage?.caption
+        || payload?.documentMessage?.caption
+        || payload?.buttonsResponseMessage?.selectedDisplayText
+        || payload?.listResponseMessage?.title
+        || payload?.listResponseMessage?.singleSelectReply?.selectedRowId
+        || payload?.templateButtonReplyMessage?.selectedDisplayText
+        || payload?.templateButtonReplyMessage?.selectedId
+        || '';
+    return typeof text === 'string' ? text.trim() : '';
 }
 
 function parseContactsFromText(text) {
@@ -358,9 +418,9 @@ function parseContactsFromText(text) {
         const parts = clean.includes(',') ? clean.split(',') : clean.split('|');
         if (parts.length >= 2) {
             const name = parts[0].trim();
-            const phone = parts.slice(1).join(' ').trim();
-            const jid = normalizeToJid(phone);
-            if (name && jid) results.push({ jid, name });
+            const phone = normalizeContactPhone(parts.slice(1).join(' ').trim());
+            const jid = phone ? `${phone}@s.whatsapp.net` : '';
+            if (name && jid) results.push({ jid, name, phone });
             continue;
         }
         const vcfName = clean.match(/^FN:(.+)$/i);
@@ -371,10 +431,12 @@ function parseContactsFromText(text) {
         const vcfPhone = clean.match(/^TEL[^:]*:(.+)$/i);
         if (vcfPhone) {
             const last = results[results.length - 1];
-            const jid = normalizeToJid(vcfPhone[1].trim());
+            const phone = normalizeContactPhone(vcfPhone[1].trim());
+            const jid = phone ? `${phone}@s.whatsapp.net` : '';
             if (last && last.pendingName && jid) {
                 last.jid = jid;
                 last.name = last.pendingName;
+                last.phone = phone;
                 delete last.pendingName;
             }
         }
@@ -585,203 +647,208 @@ async function startBot(fingerprintIndex = 0) {
             }
         });
 
-        sock.ev.on('messages.upsert', async ({ messages }) => {
-            try {
-                if (!Array.isArray(messages) || messages.length === 0) return;
-                const msg = messages[0];
-                if (!msg || !msg.message || !msg.key || msg.key.fromMe) return;
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type && type !== 'notify') return;
+            for (const msg of Array.isArray(messages) ? messages : []) {
+                try {
+                    if (!msg || !msg.message || !msg.key || msg.key.fromMe) continue;
+                    if (msg.broadcast || msg.key.remoteJid === 'status@broadcast') continue;
 
-                const jid = msg.key.remoteJid;
-                if (!jid) return;
+                    const jid = resolveIncomingJid(msg.key);
+                    if (!jid || isIgnoredChatJid(jid)) continue;
 
-                const text = (
-                    msg.message.conversation ||
-                    msg.message.extendedTextMessage?.text ||
-                    ''
-                ).trim();
-                const normalizedText = text.toLowerCase();
-                if (text) {
-                    logChatMessage(jid, 'user', text);
-                }
+                    const text = extractIncomingMessageText(msg.message);
+                    const normalizedText = text.toLowerCase();
+                    if (text) logChatMessage(jid, 'user', text);
 
-                if (jid === ADMIN_JID && msg.message.documentMessage) {
-                    try {
-                        const doc = msg.message.documentMessage;
-                        if (doc?.fileName && doc.fileName.endsWith('.csv')) {
-                            const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                            fs.writeFileSync(CSV_FILE, buffer);
-                            loadProducts();
-                            await sendTrackedMessage(jid, '📦 Products updated!');
-                            return;
+                    const messagePayload = msg.message?.ephemeralMessage?.message
+                        || msg.message?.viewOnceMessage?.message
+                        || msg.message?.viewOnceMessageV2?.message
+                        || msg.message?.viewOnceMessageV2Extension?.message
+                        || msg.message;
+
+                    if (jid === ADMIN_JID && messagePayload?.documentMessage) {
+                        try {
+                            const doc = messagePayload.documentMessage;
+                            if (doc?.fileName && doc.fileName.toLowerCase().endsWith('.csv')) {
+                                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                                fs.writeFileSync(CSV_FILE, buffer);
+                                await loadProducts();
+                                await sendTrackedMessage(jid, '📦 Products updated!');
+                                continue;
+                            }
+                        } catch (docErr) {
+                            console.error('❌ Failed to process incoming document message:', docErr);
                         }
-                    } catch (docErr) {
-                        console.error('❌ Failed to process incoming document message:', docErr);
-                    }
-                }
-
-                if (isBotPaused || pausedChats.has(jid)) {
-                    pushLearningLead(jid, text);
-                    return;
-                }
-
-                if (normalizedText === 'hello' || normalizedText === 'menu') {
-                    const categories = [...new Set(products.map((p) => p.Category).filter(Boolean))];
-                    const sample = products.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
-                    const menu = [
-                        '*📦 Product Catalogue*',
-                        categories.length ? `Categories: ${categories.join(', ')}` : '',
-                        '',
-                        sample || 'No products loaded yet.',
-                        products.length > 25 ? `\n...and ${products.length - 25} more products.` : '',
-                        '',
-                        '*Commands:*',
-                        '- products <name/category> (search products)',
-                        '- buy <product-id> <qty> (fixed-price products)',
-                        '- buy <product-id> <qty> <width_mm>x<height_mm> (sqm products)',
-                        '- cart',
-                        '- checkout'
-                    ].filter(Boolean).join('\n');
-                    await sendTrackedMessage(jid, menu);
-                } else if (normalizedText.startsWith('products ')) {
-                    const keyword = normalizedText.replace(/^products\s+/, '').trim();
-                    const matches = products.filter((product) =>
-                        [product.ID, product.Name, product.Category, product.Subcategory, product.Aliases]
-                            .map((value) => String(value || '').toLowerCase())
-                            .some((value) => value.includes(keyword))
-                    );
-                    if (!matches.length) {
-                        await sendTrackedMessage(jid, `No products found for "${keyword}".`);
-                        return;
-                    }
-                    const result = matches.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
-                    await sendTrackedMessage(jid, `*Matches for "${keyword}"*\n\n${result}${matches.length > 25 ? `\n\n...and ${matches.length - 25} more.` : ''}`);
-                } else if (normalizedText === 'cart') {
-                    const cart = userCarts[jid];
-                    if (!cart || cart.length === 0) {
-                        await sendTrackedMessage(jid, '🛒 Your cart is empty.');
-                        return;
-                    }
-                    let total = 0;
-                    const lines = cart.map((item, index) => {
-                        total += item.total;
-                        const parts = [`${index + 1}. ${item.name} (x${item.qty})`];
-                        if (item.dimensions) parts.push(`[${item.dimensions}]`);
-                        parts.push(`= ${formatCurrency(item.total)}`);
-                        return parts.join(' ');
-                    });
-                    await sendTrackedMessage(jid, `*🛒 Cart*\n\n${lines.join('\n')}\n\n*Total:* ${formatCurrency(total)}\nType *checkout* to confirm.`);
-                } else if (normalizedText.startsWith('buy ')) {
-                    const parts = text.trim().split(/\s+/);
-                    const id = parts[1];
-                    const qty = parseInt(parts[2], 10) || 1;
-                    const product = products.find((p) => String(p.ID).toLowerCase() === String(id).toLowerCase());
-                    if (!product) {
-                        await sendTrackedMessage(jid, 'Product not found. Use *products <keyword>* or *menu*.');
-                        return;
-                    }
-                    if (qty <= 0) {
-                        await sendTrackedMessage(jid, 'Quantity must be greater than zero.');
-                        return;
                     }
 
-                    let pricing;
-                    let dimensionsLabel = '';
-                    if (String(product.PriceType || '').toLowerCase() === 'sqm') {
-                        const dimText = parts.slice(3).join(' ');
-                        const dimensions = parseDimensionsFromText(dimText);
-                        if (!dimensions) {
-                            await sendTrackedMessage(
-                                jid,
-                                `This product is priced per square meter.\nUse: *buy ${product.ID} ${qty} 1200x600*`
-                            );
-                            return;
-                        }
-                        pricing = calculateSqmPrice(product, qty, dimensions.widthMm, dimensions.heightMm);
-                        dimensionsLabel = `${dimensions.widthMm}x${dimensions.heightMm}mm`;
-                    } else {
-                        pricing = calculateFixedPrice(product, qty);
-                    }
-
-                    const designFee = toNumber(product.DesignFee) * qty;
-                    const polesCost = toNumber(product.PolePrice) * qty;
-                    const installationFee = toNumber(product.InstallationFee) * qty;
-                    const materialTotal = pricing.total;
-                    const total = materialTotal + designFee + polesCost + installationFee;
-
-                    if (!userCarts[jid]) userCarts[jid] = [];
-                    userCarts[jid].push({
-                        id: product.ID,
-                        name: product.Name,
-                        qty,
-                        dimensions: dimensionsLabel,
-                        materialTotal,
-                        designFee,
-                        polesCost,
-                        installationFee,
-                        total,
-                        priceType: product.PriceType
-                    });
-
-                    const quoteLines = [
-                        `✅ Added *${product.Name}* to cart.`,
-                        `Quantity: ${qty}`,
-                        dimensionsLabel ? `Size: ${dimensionsLabel}` : '',
-                        `Material: ${formatCurrency(materialTotal)}`,
-                        designFee > 0 ? `Design fee: ${formatCurrency(designFee)}` : '',
-                        polesCost > 0 ? `Pole fee: ${formatCurrency(polesCost)}` : '',
-                        installationFee > 0 ? `Installation fee: ${formatCurrency(installationFee)}` : '',
-                        `*Item total: ${formatCurrency(total)}*`,
-                        '',
-                        'Reply *cart* to review or *checkout* to confirm pricing.'
-                    ].filter(Boolean);
-                    await sendTrackedMessage(jid, quoteLines.join('\n'));
-                } else if (normalizedText === 'checkout') {
-                    const cart = userCarts[jid];
-                    if (!cart || cart.length === 0) {
-                        await sendTrackedMessage(jid, 'Cart empty.');
-                        return;
-                    }
-                    let total = 0;
-                    let summary = '*📋 Order Summary:*\n\n';
-                    cart.forEach((item, index) => {
-                        total += item.total;
-                        summary += `${index + 1}. *${item.name}*`;
-                        if (item.dimensions) summary += ` (${item.dimensions})`;
-                        summary += ` ×${item.qty}\n`;
-                        summary += `   Material: ${formatCurrency(item.materialTotal)}\n`;
-                        if (item.designFee > 0) summary += `   Design: ${formatCurrency(item.designFee)}\n`;
-                        if (item.polesCost > 0) summary += `   Poles: ${formatCurrency(item.polesCost)}\n`;
-                        if (item.installationFee > 0) summary += `   Installation: ${formatCurrency(item.installationFee)}\n`;
-                        summary += `   *Item Total: ${formatCurrency(item.total)}*\n\n`;
-                    });
-                    summary += `*Grand Total: ${formatCurrency(total)}*\n\nReply with *confirm* to submit your order.`;
-                    await sendTrackedMessage(jid, summary);
-                } else if (normalizedText === 'confirm') {
-                    const cart = userCarts[jid];
-                    if (!cart || cart.length === 0) {
-                        await sendTrackedMessage(jid, 'No pending checkout. Type *menu* to start.');
-                        return;
-                    }
-                    const total = cart.reduce((sum, item) => sum + toNumber(item.total), 0);
-                    recordOrder(jid, cart, total);
-                    delete userCarts[jid];
-                    await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
-                } else {
-                    const learnedReply = generateLearnedReply(normalizedText);
-                    if (learnedReply) {
-                        await sendTrackedMessage(jid, learnedReply);
-                        return;
-                    }
-
-                    const openAIReply = await generateOpenAIReply(text);
-                    if (openAIReply) {
-                        await sendTrackedMessage(jid, openAIReply);
-                    } else {
+                    if (isBotPaused || pausedChats.has(jid)) {
                         pushLearningLead(jid, text);
+                        continue;
                     }
+
+                    if (!text) continue;
+
+                    if (normalizedText === 'hello' || normalizedText === 'menu') {
+                        const categories = [...new Set(products.map((p) => p.Category).filter(Boolean))];
+                        const sample = products.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
+                        const menu = [
+                            '*📦 Product Catalogue*',
+                            categories.length ? `Categories: ${categories.join(', ')}` : '',
+                            '',
+                            sample || 'No products loaded yet.',
+                            products.length > 25 ? `\n...and ${products.length - 25} more products.` : '',
+                            '',
+                            '*Commands:*',
+                            '- products <name/category> (search products)',
+                            '- buy <product-id> <qty> (fixed-price products)',
+                            '- buy <product-id> <qty> <width_mm>x<height_mm> (sqm products)',
+                            '- cart',
+                            '- checkout'
+                        ].filter(Boolean).join('\n');
+                        await sendTrackedMessage(jid, menu);
+                    } else if (normalizedText.startsWith('products ')) {
+                        const keyword = normalizedText.replace(/^products\s+/, '').trim();
+                        const matches = products.filter((product) =>
+                            [product.ID, product.Name, product.Category, product.Subcategory, product.Aliases]
+                                .map((value) => String(value || '').toLowerCase())
+                                .some((value) => value.includes(keyword))
+                        );
+                        if (!matches.length) {
+                            await sendTrackedMessage(jid, `No products found for "${keyword}".`);
+                            continue;
+                        }
+                        const result = matches.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
+                        await sendTrackedMessage(jid, `*Matches for "${keyword}"*\n\n${result}${matches.length > 25 ? `\n\n...and ${matches.length - 25} more.` : ''}`);
+                    } else if (normalizedText === 'cart') {
+                        const cart = userCarts[jid];
+                        if (!cart || cart.length === 0) {
+                            await sendTrackedMessage(jid, '🛒 Your cart is empty.');
+                            continue;
+                        }
+                        let total = 0;
+                        const lines = cart.map((item, index) => {
+                            total += item.total;
+                            const parts = [`${index + 1}. ${item.name} (x${item.qty})`];
+                            if (item.dimensions) parts.push(`[${item.dimensions}]`);
+                            parts.push(`= ${formatCurrency(item.total)}`);
+                            return parts.join(' ');
+                        });
+                        await sendTrackedMessage(jid, `*🛒 Cart*\n\n${lines.join('\n')}\n\n*Total:* ${formatCurrency(total)}\nType *checkout* to confirm.`);
+                    } else if (normalizedText.startsWith('buy ')) {
+                        const parts = text.trim().split(/\s+/);
+                        const id = parts[1];
+                        const qty = parseInt(parts[2], 10) || 1;
+                        const product = products.find((p) => String(p.ID).toLowerCase() === String(id).toLowerCase());
+                        if (!product) {
+                            await sendTrackedMessage(jid, 'Product not found. Use *products <keyword>* or *menu*.');
+                            continue;
+                        }
+                        if (qty <= 0) {
+                            await sendTrackedMessage(jid, 'Quantity must be greater than zero.');
+                            continue;
+                        }
+
+                        let pricing;
+                        let dimensionsLabel = '';
+                        if (String(product.PriceType || '').toLowerCase() === 'sqm') {
+                            const dimText = parts.slice(3).join(' ');
+                            const dimensions = parseDimensionsFromText(dimText);
+                            if (!dimensions) {
+                                await sendTrackedMessage(
+                                    jid,
+                                    `This product is priced per square meter.\nUse: *buy ${product.ID} ${qty} 1200x600*`
+                                );
+                                continue;
+                            }
+                            pricing = calculateSqmPrice(product, qty, dimensions.widthMm, dimensions.heightMm);
+                            dimensionsLabel = `${dimensions.widthMm}x${dimensions.heightMm}mm`;
+                        } else {
+                            pricing = calculateFixedPrice(product, qty);
+                        }
+
+                        const designFee = toNumber(product.DesignFee) * qty;
+                        const polesCost = toNumber(product.PolePrice) * qty;
+                        const installationFee = toNumber(product.InstallationFee) * qty;
+                        const materialTotal = pricing.total;
+                        const total = materialTotal + designFee + polesCost + installationFee;
+
+                        if (!userCarts[jid]) userCarts[jid] = [];
+                        userCarts[jid].push({
+                            id: product.ID,
+                            name: product.Name,
+                            qty,
+                            dimensions: dimensionsLabel,
+                            materialTotal,
+                            designFee,
+                            polesCost,
+                            installationFee,
+                            total,
+                            priceType: product.PriceType
+                        });
+
+                        const quoteLines = [
+                            `✅ Added *${product.Name}* to cart.`,
+                            `Quantity: ${qty}`,
+                            dimensionsLabel ? `Size: ${dimensionsLabel}` : '',
+                            `Material: ${formatCurrency(materialTotal)}`,
+                            designFee > 0 ? `Design fee: ${formatCurrency(designFee)}` : '',
+                            polesCost > 0 ? `Pole fee: ${formatCurrency(polesCost)}` : '',
+                            installationFee > 0 ? `Installation fee: ${formatCurrency(installationFee)}` : '',
+                            `*Item total: ${formatCurrency(total)}*`,
+                            '',
+                            'Reply *cart* to review or *checkout* to confirm pricing.'
+                        ].filter(Boolean);
+                        await sendTrackedMessage(jid, quoteLines.join('\n'));
+                    } else if (normalizedText === 'checkout') {
+                        const cart = userCarts[jid];
+                        if (!cart || cart.length === 0) {
+                            await sendTrackedMessage(jid, 'Cart empty.');
+                            continue;
+                        }
+                        let total = 0;
+                        let summary = '*📋 Order Summary:*\n\n';
+                        cart.forEach((item, index) => {
+                            total += item.total;
+                            summary += `${index + 1}. *${item.name}*`;
+                            if (item.dimensions) summary += ` (${item.dimensions})`;
+                            summary += ` ×${item.qty}\n`;
+                            summary += `   Material: ${formatCurrency(item.materialTotal)}\n`;
+                            if (item.designFee > 0) summary += `   Design: ${formatCurrency(item.designFee)}\n`;
+                            if (item.polesCost > 0) summary += `   Poles: ${formatCurrency(item.polesCost)}\n`;
+                            if (item.installationFee > 0) summary += `   Installation: ${formatCurrency(item.installationFee)}\n`;
+                            summary += `   *Item Total: ${formatCurrency(item.total)}*\n\n`;
+                        });
+                        summary += `*Grand Total: ${formatCurrency(total)}*\n\nReply with *confirm* to submit your order.`;
+                        await sendTrackedMessage(jid, summary);
+                    } else if (normalizedText === 'confirm') {
+                        const cart = userCarts[jid];
+                        if (!cart || cart.length === 0) {
+                            await sendTrackedMessage(jid, 'No pending checkout. Type *menu* to start.');
+                            continue;
+                        }
+                        const total = cart.reduce((sum, item) => sum + toNumber(item.total), 0);
+                        recordOrder(jid, cart, total);
+                        delete userCarts[jid];
+                        await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
+                    } else {
+                        const learnedReply = generateLearnedReply(normalizedText);
+                        if (learnedReply) {
+                            await sendTrackedMessage(jid, learnedReply);
+                            continue;
+                        }
+
+                        const openAIReply = await generateOpenAIReply(text);
+                        if (openAIReply) {
+                            await sendTrackedMessage(jid, openAIReply);
+                        } else {
+                            pushLearningLead(jid, text);
+                            await sendTrackedMessage(jid, 'Thanks for your message 👋 I can help right away. Please send *menu* for products, or share what you need and quantity for a quick quote.');
+                        }
+                    }
+                } catch (err) {
+                    console.error('❌ Error handling incoming message (connection kept alive):', err);
                 }
-            } catch (err) {
-                console.error('❌ Error handling incoming message (connection kept alive):', err);
             }
         });
     } catch (err) {
@@ -985,7 +1052,10 @@ app.post('/api/admin/contacts', writeRateLimiter, (req, res) => {
     const jid = normalizeToJid(req.body?.phone || req.body?.jid || '');
     if (!name || !jid) return res.status(400).json({ error: 'Valid name and phone/jid are required.' });
     contactNames[jid] = name;
+    const digits = normalizeContactPhone(req.body?.phone || req.body?.jid || '');
+    if (digits) contactPhones[jid] = digits;
     saveJsonFile(CONTACTS_FILE, contactNames);
+    saveJsonFile(CONTACT_PHONES_FILE, contactPhones);
     res.json({ message: 'Contact saved.', jid, name });
 });
 
@@ -995,8 +1065,10 @@ app.post('/api/admin/contacts/import', writeRateLimiter, contactsImportUpload.si
     if (parsed.length === 0) return res.status(400).json({ error: 'No valid contacts found in file.' });
     for (const entry of parsed) {
         contactNames[entry.jid] = entry.name;
+        if (entry.phone) contactPhones[entry.jid] = entry.phone;
     }
     saveJsonFile(CONTACTS_FILE, contactNames);
+    saveJsonFile(CONTACT_PHONES_FILE, contactPhones);
     res.json({ message: 'Contacts imported.', imported: parsed.length });
 });
 
@@ -1004,7 +1076,9 @@ app.delete('/api/admin/contacts/:jid', writeRateLimiter, (req, res) => {
     const jid = String(req.params.jid || '').trim();
     if (!jid) return res.status(400).json({ error: 'Missing jid.' });
     delete contactNames[jid];
+    delete contactPhones[jid];
     saveJsonFile(CONTACTS_FILE, contactNames);
+    saveJsonFile(CONTACT_PHONES_FILE, contactPhones);
     res.json({ message: 'Contact removed.', jid });
 });
 
