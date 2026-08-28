@@ -381,13 +381,11 @@ function isIgnoredChatJid(jid) {
 
 function resolveIncomingJid(key) {
     const primary = key?.remoteJid || '';
-    const alternate = key?.remoteJidAlt || '';
     const participant = key?.participant || '';
     if (isIgnoredChatJid(primary)) return primary;
     if (isDirectUserJid(primary)) return primary;
-    if (isDirectUserJid(alternate)) return alternate;
     if (isDirectUserJid(participant)) return participant;
-    return primary || alternate || participant || '';
+    return primary || participant || '';
 }
 
 function extractIncomingMessageText(message) {
