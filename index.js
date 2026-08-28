@@ -548,19 +548,32 @@ function buildConversationalFallback(userText = '') {
     ].join('\n');
 }
 
+function buildConversationContextForAI(jid) {
+    if (!jid) return [];
+    const recent = (chatLog.get(jid) || [])
+        .filter((entry) => entry && entry.text)
+        .slice(-8)
+        .map((entry) => ({
+            role: entry.role === 'user' ? 'user' : 'assistant',
+            content: String(entry.text).slice(0, 700)
+        }));
+    return recent;
+}
+
 async function sendTrackedMessage(jid, text, role = 'bot') {
     if (!botSocket) throw new Error('WhatsApp socket not ready');
     await botSocket.sendMessage(jid, { text });
     logChatMessage(jid, role, text);
 }
 
-async function generateOpenAIReply(userText) {
+async function generateOpenAIReply(userText, jid = '') {
     if (!openaiClient) return null;
     const trimmed = String(userText || '').trim();
     if (!trimmed) return null;
 
     try {
         const productContext = buildProductContextForAI(trimmed);
+        const conversationContext = buildConversationContextForAI(jid);
         const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
             messages: [
@@ -569,16 +582,20 @@ async function generateOpenAIReply(userText) {
                     content: [
                         buildOpenAISystemPrompt(),
                         'You are a human-like WhatsApp receptionist and sales consultant.',
-                        'Do not tell the customer to "type menu".',
+                        'Do not tell the customer to "type menu" or use command-style instructions unless specifically asked.',
                         'Use the product catalog below as the source of truth for products and pricing.',
-                        'Ask clarifying questions naturally when details are missing.',
-                        'When pricing is requested, reference relevant items and pricing from the catalog context.',
+                        'Find likely products for the customer proactively based on their message.',
+                        'When relevant, recommend up to 3 best-fit products by name and give pricing from the catalog context.',
+                        'Do not ask the customer to choose by product ID.',
+                        'Keep the conversation going naturally with one helpful follow-up question.',
+                        'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
                         `Catalog context:\n${productContext}`
                     ].join('\n\n')
                 },
+                ...conversationContext,
                 { role: 'user', content: trimmed.slice(0, 1000) }
             ],
-            max_tokens: 320
+            max_tokens: 360
         });
 
         const reply = completion.choices?.[0]?.message?.content
@@ -767,7 +784,7 @@ async function startBot(fingerprintIndex = 0) {
                         const greetInput = normalizedText === 'menu'
                             ? 'Customer asked to view products and pricing.'
                             : text;
-                        const aiGreeting = await generateOpenAIReply(greetInput);
+                        const aiGreeting = await generateOpenAIReply(greetInput, jid);
                         if (aiGreeting) {
                             await sendTrackedMessage(jid, aiGreeting);
                         } else {
@@ -904,7 +921,7 @@ async function startBot(fingerprintIndex = 0) {
                             continue;
                         }
 
-                        const openAIReply = await generateOpenAIReply(text);
+                        const openAIReply = await generateOpenAIReply(text, jid);
                         if (openAIReply) {
                             await sendTrackedMessage(jid, openAIReply);
                         } else {
