@@ -323,7 +323,9 @@
         try {
           await refreshAllData();
           renderCoachMessages();
-        } catch {}
+        } catch (e) {
+          setTopMessage(`Auto refresh warning: ${e.message || 'refresh failed'}`);
+        }
       }, ms);
     }
 
