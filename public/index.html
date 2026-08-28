@@ -17,13 +17,13 @@
       --line: #253250;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b1220,#111a2d); color: var(--text); }
-    .wrap { max-width: 1360px; margin: 0 auto; padding: 18px; }
+    body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b1220,#111a2d); color: var(--text); overflow-x: hidden; }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 18px; width: 100%; }
     .top { position: sticky; top: 0; z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .badge { padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font-size: 13px; }
     .grid { display: grid; grid-template-columns: 340px 1fr; gap: 12px; min-height: 560px; }
-    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; }
     .panel h2 { margin: 0; font-size: 16px; }
     .head { padding: 12px; border-bottom: 1px solid var(--line); background: #0f1727; }
     .body { padding: 12px; }
@@ -45,7 +45,7 @@
     .btn-ok { background: #134e4a; }
     .btn-danger { background: #4c1d1d; }
     .sections { margin-top: 14px; display: grid; gap: 12px; }
-    .section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+    .section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
     pre { background: #0d1525; border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: auto; max-height: 220px; }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .coach-box { border: 1px solid var(--line); border-radius: 10px; background: #0d1525; min-height: 230px; max-height: 280px; overflow:auto; padding:10px; display:grid; gap:8px; }
@@ -61,12 +61,21 @@
     .pill-toggle { display: inline-flex; align-items: center; gap: 8px; }
     .pill-toggle input { accent-color: var(--brand); }
     .top .row + .row { margin-top: 10px; }
+    .upload-status { margin-top: 8px; word-break: break-word; }
+    .ai-stack { display: grid; gap: 8px; }
+    .ai-stack button { width: 100%; }
     @media (max-width: 980px) {
       .grid,.two { grid-template-columns: 1fr; }
       .wrap { padding: 10px; }
       .top { position: static; padding: 12px; }
       .messages { height: 360px; }
-      input, textarea, button, select { font-size: 16px; }
+      .top .row { align-items: stretch; }
+      .top .row > * { width: 100%; min-width: 0 !important; }
+      input, textarea, button, select { font-size: 16px; width: 100%; min-width: 0; }
+      .tabs { padding-bottom: 8px; }
+      .tab-btn { flex: 0 0 auto; }
+      .messages, pre, .coach-box { max-width: 100%; }
+      .head .row { gap: 6px; }
     }
   </style>
 </head>
@@ -160,7 +169,7 @@
             <button type="submit">Upload and Import</button>
           </form>
           <div class="muted">Supports chat exports (.txt/.json/.csv) and WhatsApp DB backups (.db/.crypt14). For best training extraction from conversations, include your name in <em>trainerName</em>.</div>
-          <div id="backupResult" class="mini"></div>
+          <div id="backupResult" class="mini upload-status"></div>
         </div>
         <div>
           <h3>Interactive AI Reply Coach</h3>
@@ -170,8 +179,10 @@
             <textarea id="coachPrompt" rows="3" placeholder="Example: Client says this quote is too expensive. How should I respond and keep the sale?" required></textarea>
             <button type="submit">Ask AI Coach</button>
           </form>
-          <button id="saveCoachAsTeaching" type="button">Save Last Coach Reply to Teachings</button>
-          <button id="clearCoachChat" type="button">Clear Coach Chat</button>
+          <div class="ai-stack">
+            <button id="saveCoachAsTeaching" type="button">Save Last Coach Reply to Teachings</button>
+            <button id="clearCoachChat" type="button">Clear Coach Chat</button>
+          </div>
           <div id="coachResult" class="mini"></div>
           <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
           <h3>Manual Teach AI Behavior</h3>
@@ -578,10 +589,19 @@
 
     el('backupForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      const fileInput = el('backup');
+      const uploadButton = event.submitter || el('backupForm').querySelector('button[type="submit"]');
+      const selectedFile = fileInput?.files?.[0];
+      if (!selectedFile) {
+        el('backupResult').textContent = 'Please select a backup file before uploading.';
+        return;
+      }
       try {
+        if (uploadButton) uploadButton.disabled = true;
+        el('backupResult').textContent = `Uploading "${selectedFile.name}"... Please wait.`;
         const formData = new FormData();
         formData.append('trainerName', el('trainerName').value.trim());
-        formData.append('backup', el('backup').files[0]);
+        formData.append('backup', selectedFile);
         const response = await apiFetch('/api/ai/upload-backup', { method: 'POST', body: formData });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Upload failed');
@@ -589,8 +609,10 @@
         const imported = `Imported: ${data.importedRules} (rules: ${data.structuredRules || 0}, transcript: ${data.transcriptRules || 0}, json: ${data.jsonRules || 0}).`;
         const note = data.note ? ` ${data.note}` : '';
         el('backupResult').textContent = `${data.message} ${imported}${source}${note}`.trim();
+        fileInput.value = '';
         await refreshDashboardState();
       } catch (e) { el('backupResult').textContent = e.message; }
+      finally { if (uploadButton) uploadButton.disabled = false; }
     });
 
     el('teachForm').addEventListener('submit', async (event) => {

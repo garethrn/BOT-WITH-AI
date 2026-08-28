@@ -247,6 +247,7 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 Supported backup file types for learning import:
 - Readable exports: `.txt`, `.csv`, `.json`
 - WhatsApp DB uploads: `.db`, `.crypt12`, `.crypt14`, `.crypt15`
+- Max upload size: 350MB per backup file
 
 Notes:
 - `.crypt*` files are encrypted by WhatsApp. The bot now accepts these uploads and attempts safe text extraction for learning.

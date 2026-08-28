@@ -50,6 +50,7 @@ const ORDERS_FILE = path.join(STORAGE_DIR, 'orders.json');
 const CONTACTS_FILE = path.join(STORAGE_DIR, 'contacts.json');
 const CONTACT_PHONES_FILE = path.join(STORAGE_DIR, 'contact_phones.json');
 const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
+const MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 350;
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -1235,7 +1236,7 @@ const readRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeader
 const writeRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 const upload = multer({
-    limits: { fileSize: 1024 * 1024 * 100 },
+    limits: { fileSize: MAX_BACKUP_UPLOAD_BYTES },
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, BACKUPS_DIR),
         filename: (_req, file, cb) => {
@@ -1496,16 +1497,24 @@ app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (re
         return res.status(400).json({ error: 'Invalid backup path.' });
     }
 
-    const fileContent = fs.readFileSync(safePath);
-    const trainerName = String(req.body?.trainerName || '').trim();
-    const result = importBackup(req.file.originalname, fileContent, {
-        trainerName,
-        mimeType: req.file.mimetype
-    });
-    res.json({
-        message: result.note || 'Backup uploaded and imported for AI learning.',
-        ...result
-    });
+    try {
+        const fileContent = fs.readFileSync(safePath);
+        const trainerName = String(req.body?.trainerName || '').trim();
+        const result = importBackup(req.file.originalname, fileContent, {
+            trainerName,
+            mimeType: req.file.mimetype
+        });
+        return res.json({
+            message: result.note || 'Backup uploaded and imported for AI learning.',
+            ...result
+        });
+    } catch (error) {
+        return res.status(500).json({ error: error?.message || 'Failed to import backup file.' });
+    } finally {
+        try {
+            if (fs.existsSync(safePath)) fs.unlinkSync(safePath);
+        } catch {}
+    }
 });
 
 app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
@@ -1558,7 +1567,8 @@ app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {
 
 app.use((err, _req, res, _next) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Uploaded file too large (max 5MB).' });
+        const maxMb = Math.floor(MAX_BACKUP_UPLOAD_BYTES / (1024 * 1024));
+        return res.status(400).json({ error: `Uploaded file too large (max ${maxMb}MB).` });
     }
     console.error('❌ API error:', err);
     return res.status(500).json({ error: 'Unexpected server error.' });
