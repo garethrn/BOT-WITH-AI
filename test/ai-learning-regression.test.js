@@ -16,7 +16,7 @@ function cleanup(filePath) {
     } catch {}
 }
 
-test('teachBehavior extracts Q/A instruction rules for immediate learned replies', () => {
+test('teachBehavior extracts Q/A instruction rules for immediate learned replies', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {
         learning.teachBehavior('Q: delivery time | A: Standard turnaround is 2-3 working days.', []);
@@ -27,7 +27,7 @@ test('teachBehavior extracts Q/A instruction rules for immediate learned replies
     }
 });
 
-test('generateLearnedReply matches partial natural-language overlap from taught rules', () => {
+test('generateLearnedReply matches partial natural-language overlap from taught rules', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {
         learning.teachBehavior('Sales behavior guidance', [
@@ -40,7 +40,7 @@ test('generateLearnedReply matches partial natural-language overlap from taught 
     }
 });
 
-test('importBackup accepts crypt14-style binary uploads and extracts transcript rules', () => {
+test('importBackup accepts crypt14-style binary uploads and extracts transcript rules', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {
         const transcript = [
