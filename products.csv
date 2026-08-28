@@ -86,9 +86,9 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 85,PP-0085,Paper Printing,Photocopies,,,Photocopies Color ,A4 (210 x 297) mm,300gsm - Laminated ,Double Sided ,1,fixed,,R13.00,,0,no,,0,yes
 86,PP-0086,Paper Printing,Photocopies,,,Photocopies Color ,A3 (297 x 210) mm,300gsm - Laminated ,Double Sided ,1,fixed,,R25.00,,0,no,,0,yes
 87,PP-0087,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM ,Single sided ,>50,fixed,,R3.00,,120,no,,0,yes
-88,PP-0088,Paper Printing,Bookmarks,,,Bookmarks ,191 x 60mm,300 GSM,Double Sided ,>50,fixed,,R5.00,,120,no,,0,yes
-89,PP-0089,Paper Printing,Bookmarks,,,Bookmarks ,192 x 60mm,300 GSM - Laminated ,Single sided ,>50,fixed,,R4.00,,120,no,,0,yes
-90,PP-0090,Paper Printing,Bookmarks,,,Bookmarks ,193 x 60mm,300 GSM - Laminated,Double Sided ,>50,fixed,,R6.00,,120,no,,0,yes
+88,PP-0088,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM,Double Sided ,>50,fixed,,R5.00,,120,no,,0,yes
+89,PP-0089,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated ,Single sided ,>50,fixed,,R4.00,,120,no,,0,yes
+90,PP-0090,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated,Double Sided ,>50,fixed,,R6.00,,120,no,,0,yes
 91,PP-0091,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Single sided ,>20,fixed,,R12.00,,120,no,,0,yes
 92,PP-0092,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Semi gloss ,Single sided ,>20,fixed,,R15.00,,120,no,,0,yes
 93,PP-0093,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Double Sided ,>20,fixed,,R17.00,,240,no,,0,yes
