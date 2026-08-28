@@ -804,14 +804,14 @@ async function startBot(fingerprintIndex = 0) {
                     } else if (normalizedText.startsWith('buy ')) {
                         const parts = text.trim().split(/\s+/);
                         const id = parts[1];
-                        const qty = parseInt(parts[2], 10) || 1;
+                        const qty = parseInt(parts[2], 10);
                         const product = products.find((p) => String(p.ID).toLowerCase() === String(id).toLowerCase());
                         if (!product) {
                             await sendTrackedMessage(jid, 'I can’t find that product ID right now. Tell me the product name you need and I’ll help you find the right option and price.');
                             continue;
                         }
-                        if (qty <= 0) {
-                            await sendTrackedMessage(jid, 'Quantity must be greater than zero.');
+                        if (!Number.isFinite(qty) || qty <= 0) {
+                            await sendTrackedMessage(jid, 'Please share a valid quantity greater than zero (example: buy 101 2).');
                             continue;
                         }
 
