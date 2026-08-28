@@ -23,7 +23,8 @@ const {
     getDashboardData,
     setMetaConnectionIntent,
     generateLearnedReply,
-    buildOpenAISystemPrompt
+    buildOpenAISystemPrompt,
+    rememberConversationReply
 } = require('./lib/ai-learning');
 
 const BROWSER_FINGERPRINTS = [
@@ -522,6 +523,77 @@ function buildProductContextForAI(userText = '') {
     }).join('\n');
 }
 
+function rankProductsForText(text = '') {
+    const normalized = String(text || '').toLowerCase();
+    const tokens = normalized.split(/\s+/).filter((token) => token.length > 1);
+    return products.map((product) => {
+        const haystack = [
+            product.ID,
+            product.Name,
+            product.Category,
+            product.Subcategory,
+            product.Aliases
+        ].map((value) => String(value || '').toLowerCase()).join(' ');
+        let score = 0;
+        for (const token of tokens) {
+            if (haystack.includes(token)) score += 2;
+            if (String(product.Name || '').toLowerCase().includes(token)) score += 1;
+        }
+        return { product, score };
+    }).sort((a, b) => b.score - a.score);
+}
+
+function parseQuantityFromText(text = '') {
+    const quantityMatch = String(text || '').match(/\b(?:qty|quantity|x)?\s*(\d{1,5})\b/i);
+    if (!quantityMatch) return null;
+    const qty = parseInt(quantityMatch[1], 10);
+    return Number.isFinite(qty) && qty > 0 ? qty : null;
+}
+
+function buildQuoteForMatchedProduct(product, text) {
+    if (!product) return null;
+    const qty = parseQuantityFromText(text);
+    const isSqm = String(product.PriceType || '').toLowerCase() === 'sqm';
+    const name = product.Name || product.Subcategory || 'Product';
+
+    if (!qty) {
+        return `I can quote *${name}* for you. Please share quantity so I can calculate the correct price.`;
+    }
+
+    let materialTotal = 0;
+    let dimensionsLabel = '';
+    if (isSqm) {
+        const dimensions = parseDimensionsFromText(text);
+        if (!dimensions) {
+            return `Great choice — *${name}* is priced per square meter at ${formatCurrency(product.PricePerSqm)}${toNumber(product.MinPrice) > 0 ? ` (minimum ${formatCurrency(product.MinPrice)})` : ''}. Please share size in mm (example: 1200x600) so I can quote accurately.`;
+        }
+        const pricing = calculateSqmPrice(product, qty, dimensions.widthMm, dimensions.heightMm);
+        materialTotal = pricing.total;
+        dimensionsLabel = `${dimensions.widthMm}x${dimensions.heightMm}mm`;
+    } else {
+        const pricing = calculateFixedPrice(product, qty);
+        materialTotal = pricing.total;
+    }
+
+    const designFee = toNumber(product.DesignFee) * qty;
+    const polesCost = toNumber(product.PolePrice) * qty;
+    const installationFee = toNumber(product.InstallationFee) * qty;
+    const total = materialTotal + designFee + polesCost + installationFee;
+
+    const lines = [
+        `Based on what you asked, I’d recommend *${name}*.`,
+        `Estimated pricing for quantity ${qty}${dimensionsLabel ? ` (${dimensionsLabel})` : ''}:`,
+        `• Material: ${formatCurrency(materialTotal)}`,
+        designFee > 0 ? `• Design fee: ${formatCurrency(designFee)}` : '',
+        polesCost > 0 ? `• Pole fee: ${formatCurrency(polesCost)}` : '',
+        installationFee > 0 ? `• Installation fee: ${formatCurrency(installationFee)}` : '',
+        `*Estimated total: ${formatCurrency(total)}*`,
+        'Would you like me to prepare this quote and help with turnaround/delivery next?'
+    ].filter(Boolean);
+
+    return lines.join('\n');
+}
+
 function buildConversationalFallback(userText = '') {
     const prompt = String(userText || '').toLowerCase();
     const shortlist = buildProductContextForAI(userText)
@@ -794,8 +866,11 @@ async function startBot(fingerprintIndex = 0) {
                         const aiGreeting = await generateOpenAIReply(greetInput, jid);
                         if (aiGreeting) {
                             await sendTrackedMessage(jid, aiGreeting);
+                            rememberConversationReply(greetInput, aiGreeting);
                         } else {
-                            await sendTrackedMessage(jid, buildConversationalFallback(greetInput));
+                            const fallbackReply = buildConversationalFallback(greetInput);
+                            await sendTrackedMessage(jid, fallbackReply);
+                            rememberConversationReply(greetInput, fallbackReply);
                         }
                     } else if (normalizedText.startsWith('products ')) {
                         const keyword = normalizedText.replace(/^products\s+/, '').trim();
@@ -922,18 +997,34 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
+                        const rankedProducts = rankProductsForText(text);
+                        const topMatch = rankedProducts[0];
+                        const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label)\b/i.test(text);
+                        if (topMatch && topMatch.score > 1 && pricingIntent) {
+                            const guidedQuote = buildQuoteForMatchedProduct(topMatch.product, text);
+                            if (guidedQuote) {
+                                await sendTrackedMessage(jid, guidedQuote);
+                                rememberConversationReply(text, guidedQuote);
+                                continue;
+                            }
+                        }
+
                         const learnedReply = generateLearnedReply(normalizedText);
                         if (learnedReply) {
                             await sendTrackedMessage(jid, learnedReply);
+                            rememberConversationReply(text, learnedReply);
                             continue;
                         }
 
                         const openAIReply = await generateOpenAIReply(text, jid);
                         if (openAIReply) {
                             await sendTrackedMessage(jid, openAIReply);
+                            rememberConversationReply(text, openAIReply);
                         } else {
                             pushLearningLead(jid, text);
-                            await sendTrackedMessage(jid, buildConversationalFallback(text));
+                            const fallbackReply = buildConversationalFallback(text);
+                            await sendTrackedMessage(jid, fallbackReply);
+                            rememberConversationReply(text, fallbackReply);
                         }
                     }
                 } catch (err) {
