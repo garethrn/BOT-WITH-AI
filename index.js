@@ -518,6 +518,11 @@ function parseQuantityFromText(text = '', dimensions = null) {
         const parsed = parseInt(explicit[1], 10);
         if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
+    const prefixed = raw.match(/\b(\d{1,6})\s*(?:copies|cards|labels|banners|stickers|units|pieces)\b/i);
+    if (prefixed) {
+        const parsed = parseInt(prefixed[1], 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
 
     const withoutDimensions = raw.replace(/\b\d+(?:\.\d+)?\s*(?:mm|cm|m)?\s*[x×]\s*\d+(?:\.\d+)?\s*(?:mm|cm|m)?\b/gi, ' ');
     const values = Array.from(withoutDimensions.matchAll(/\b(\d{2,6})\b/g)).map((m) => parseInt(m[1], 10));
@@ -657,6 +662,49 @@ function buildQuoteForMatchedProduct(product, request) {
     ].filter(Boolean).join('\n');
 }
 
+function buildVariantKey(product) {
+    return [
+        normalizeTextForMatch(product.Category),
+        normalizeTextForMatch(product.Subcategory),
+        normalizeTextForMatch(product.SubSubcategory),
+        normalizeTextForMatch(product.Name),
+        normalizeTextForMatch(product.Size),
+        normalizeTextForMatch(product.Finish),
+        normalizeTextForMatch(product.SingleOrDoubleSided),
+        String(product.PriceType || '').toLowerCase()
+    ].join('|');
+}
+
+function pickBestQuantityTier(candidates, requestedQty) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+    const sorted = [...candidates].sort((a, b) => parseUnitsPerProduct(a.UnitsPerProduct) - parseUnitsPerProduct(b.UnitsPerProduct));
+    const preferred = sorted.find((item) => parseUnitsPerProduct(item.UnitsPerProduct) >= requestedQty);
+    return preferred || sorted[sorted.length - 1];
+}
+
+function selectProductsByQuantityTier(productsToFilter, requestedQty) {
+    if (!requestedQty) return productsToFilter;
+    const groups = new Map();
+    for (const item of productsToFilter) {
+        const isFixed = String(item.PriceType || '').toLowerCase() === 'fixed';
+        if (!isFixed) continue;
+        const key = buildVariantKey(item);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
+    }
+    if (groups.size === 0) return productsToFilter;
+
+    const selected = new Set();
+    for (const entries of groups.values()) {
+        const tier = pickBestQuantityTier(entries, requestedQty);
+        if (tier) selected.add(tier);
+    }
+    return productsToFilter.filter((item) => {
+        const isFixed = String(item.PriceType || '').toLowerCase() === 'fixed';
+        return !isFixed || selected.has(item);
+    });
+}
+
 function buildCsvPricingReply(text = '') {
     const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label|flyer|poster|invoice)\b/i.test(text);
     if (!pricingIntent) return null;
@@ -683,6 +731,7 @@ function buildCsvPricingReply(text = '') {
     if (request.finish) filtered = filtered.filter((item) => normalizeTextForMatch(item.Finish).includes(request.finish));
     if (request.sizeToken) filtered = filtered.filter((item) => normalizeTextForMatch(item.Size).includes(request.sizeToken));
     if (filtered.length === 0) filtered = candidatePool;
+    filtered = selectProductsByQuantityTier(filtered, request.quantity);
 
     if (!request.quantity) {
         const sample = filtered[0];
