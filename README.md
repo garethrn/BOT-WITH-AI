@@ -302,3 +302,4 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
   - `buy <id> <qty> <width>x<height>` for `sqm` items (mm)
   - `cart` and `checkout`, then `confirm` to submit
 - Successful conversational replies are saved as reusable AI-learning patterns so older conversations continue improving future responses.
+- For natural-language pricing requests, the bot now matches CSV product variants by options (size, finish, sidedness, quantity) and asks targeted follow-up questions when required details are missing.

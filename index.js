@@ -485,74 +485,117 @@ function getConversationSummaries() {
     return summaries;
 }
 
-function buildProductContextForAI(userText = '') {
-    const normalized = String(userText || '').toLowerCase();
-    const ranked = products.map((product) => {
-        const haystack = [
-            product.ID,
-            product.Name,
-            product.Category,
-            product.Subcategory,
-            product.Aliases
-        ].map((value) => String(value || '').toLowerCase()).join(' ');
+const PRODUCT_TEXT_STOP_WORDS = new Set([
+    'i', 'me', 'my', 'need', 'want', 'for', 'with', 'the', 'and', 'a', 'an', 'to', 'please',
+    'quote', 'price', 'pricing', 'cost', 'can', 'you', 'help', 'on', 'of', 'in', 'at'
+]);
 
-        let score = 0;
-        const tokens = normalized.split(/\s+/).filter(Boolean);
-        for (const token of tokens) {
-            if (token.length < 2) continue;
-            if (haystack.includes(token)) score += 1;
-        }
-        return { product, score };
-    });
+function normalizeTextForMatch(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9\sx]/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
-    ranked.sort((a, b) => b.score - a.score);
-    const top = ranked
-        .filter((item) => item.score > 0)
-        .slice(0, 12)
-        .map((item) => item.product);
+function parseQuantityFromText(text = '', dimensions = null) {
+    const raw = String(text || '');
+    const explicit = raw.match(/\b(?:qty|quantity|copies|cards|labels|banners|stickers|units|pieces)\s*[:\-]?\s*(\d{1,6})\b/i);
+    if (explicit) {
+        const parsed = parseInt(explicit[1], 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
 
-    const fallback = top.length ? top : products.slice(0, 12);
-    if (!fallback.length) return 'No product catalog loaded.';
+    const withoutDimensions = dimensions
+        ? raw.replace(new RegExp(`${dimensions.widthMm}\\s*[x×]\\s*${dimensions.heightMm}`, 'i'), ' ')
+        : raw;
+    const values = Array.from(withoutDimensions.matchAll(/\b(\d{2,6})\b/g)).map((m) => parseInt(m[1], 10));
+    const candidates = values.filter((num) => Number.isFinite(num) && num > 0);
+    if (candidates.length === 0) return null;
+    return candidates[0];
+}
 
-    return fallback.map((product) => {
-        const name = product.Name || product.Subcategory || product.Category || 'Product';
-        const pricing = String(product.PriceType || '').toLowerCase() === 'sqm'
-            ? `${formatCurrency(product.PricePerSqm)}/m²${toNumber(product.MinPrice) > 0 ? ` (min ${formatCurrency(product.MinPrice)})` : ''}`
-            : `${formatCurrency(product.FixedPrice)}${parseUnitsPerProduct(product.UnitsPerProduct) > 1 ? ` per ${parseUnitsPerProduct(product.UnitsPerProduct)} units` : ' per unit'}`;
-        return `- ID ${product.ID}: ${name} | ${pricing}`;
-    }).join('\n');
+function parseProductRequestDetails(text = '') {
+    const normalized = normalizeTextForMatch(text);
+    const dimensions = parseDimensionsFromText(normalized);
+    const quantity = parseQuantityFromText(normalized, dimensions);
+
+    let side = '';
+    if (/\b(double|both|2)\s*[- ]?\s*sided\b/.test(normalized)) side = 'double';
+    if (/\b(single|one|1)\s*[- ]?\s*sided\b/.test(normalized)) side = 'single';
+
+    const sizeToken = (normalized.match(/\b(a0|a1|a2|a3|a4|a5|a6)\b/) || [])[1] || '';
+    const finishOptions = [...new Set(products.map((p) => normalizeTextForMatch(p.Finish)).filter(Boolean))];
+    const finish = finishOptions.find((item) => item.length >= 4 && normalized.includes(item)) || '';
+
+    const tokens = normalized
+        .split(' ')
+        .filter((token) => token.length > 1 && !PRODUCT_TEXT_STOP_WORDS.has(token) && !/^\d+$/.test(token));
+
+    return { normalized, tokens, quantity, side, sizeToken, finish, dimensions };
+}
+
+function scoreProductVariant(product, request) {
+    const normalizedName = normalizeTextForMatch([product.Name, product.Category, product.Subcategory, product.SKU, product.Aliases].join(' '));
+    const normalizedFinish = normalizeTextForMatch(product.Finish);
+    const normalizedSide = normalizeTextForMatch(product.SingleOrDoubleSided);
+    const normalizedSize = normalizeTextForMatch(product.Size);
+    const units = parseUnitsPerProduct(product.UnitsPerProduct);
+
+    let score = 0;
+    for (const token of request.tokens) {
+        if (normalizedName.includes(token)) score += 3;
+        if (normalizeTextForMatch(product.Name).includes(token)) score += 2;
+    }
+
+    if (request.side) score += normalizedSide.includes(request.side) ? 8 : -5;
+    if (request.finish) score += normalizedFinish.includes(request.finish) ? 7 : -4;
+    if (request.sizeToken) score += normalizedSize.includes(request.sizeToken) ? 8 : -4;
+
+    if (request.dimensions) {
+        const width = String(request.dimensions.widthMm);
+        const height = String(request.dimensions.heightMm);
+        if (normalizedSize.includes(width) && normalizedSize.includes(height)) score += 10;
+        if (String(product.PriceType || '').toLowerCase() === 'sqm') score += 4;
+    }
+
+    if (request.quantity && String(product.PriceType || '').toLowerCase() === 'fixed') {
+        if (units === request.quantity) score += 8;
+        else score += Math.max(0, 5 - Math.floor(Math.abs(units - request.quantity) / 100));
+    }
+
+    if (String(product.PriceType || '').toLowerCase() === 'sqm' && !request.dimensions) {
+        score -= 1;
+    }
+
+    return score;
 }
 
 function rankProductsForText(text = '') {
-    const normalized = String(text || '').toLowerCase();
-    const tokens = normalized.split(/\s+/).filter((token) => token.length > 1);
-    return products.map((product) => {
-        const haystack = [
-            product.ID,
-            product.Name,
-            product.Category,
-            product.Subcategory,
-            product.Aliases
-        ].map((value) => String(value || '').toLowerCase()).join(' ');
-        let score = 0;
-        for (const token of tokens) {
-            if (haystack.includes(token)) score += 2;
-            if (String(product.Name || '').toLowerCase().includes(token)) score += 1;
-        }
-        return { product, score };
-    }).sort((a, b) => b.score - a.score);
+    const request = parseProductRequestDetails(text);
+    return products.map((product) => ({
+        product,
+        score: scoreProductVariant(product, request)
+    })).sort((a, b) => b.score - a.score);
 }
 
-function parseQuantityFromText(text = '') {
-    const quantityMatch = String(text || '').match(/\b(?:qty|quantity|x)?\s*(\d{1,5})\b/i);
-    if (!quantityMatch) return null;
-    const qty = parseInt(quantityMatch[1], 10);
-    return Number.isFinite(qty) && qty > 0 ? qty : null;
+function buildProductContextForAI(userText = '') {
+    const ranked = rankProductsForText(userText);
+    const selected = ranked.filter((item) => item.score > 0).slice(0, 12).map((item) => item.product);
+    const fallback = selected.length ? selected : products.slice(0, 12);
+    if (!fallback.length) return 'No product catalog loaded.';
+    return fallback.map((product) => {
+        const name = product.Name || product.Subcategory || product.Category || 'Product';
+        const pricing = getProductDisplayPrice(product);
+        const options = [
+            product.Size ? `size: ${product.Size}` : '',
+            product.Finish ? `finish: ${product.Finish}` : '',
+            product.SingleOrDoubleSided ? `sides: ${product.SingleOrDoubleSided}` : '',
+            product.UnitsPerProduct ? `qty option: ${product.UnitsPerProduct}` : ''
+        ].filter(Boolean).join(' | ');
+        return `- ${name} (${options || 'standard'}) | ${pricing}`;
+    }).join('\n');
 }
 
-function buildQuoteForMatchedProduct(product, text) {
+function buildQuoteForMatchedProduct(product, request) {
     if (!product) return null;
-    const qty = parseQuantityFromText(text);
+    const qty = request.quantity;
     const isSqm = String(product.PriceType || '').toLowerCase() === 'sqm';
     const name = product.Name || product.Subcategory || 'Product';
 
@@ -563,9 +606,9 @@ function buildQuoteForMatchedProduct(product, text) {
     let materialTotal = 0;
     let dimensionsLabel = '';
     if (isSqm) {
-        const dimensions = parseDimensionsFromText(text);
+        const dimensions = request.dimensions;
         if (!dimensions) {
-            return `Great choice — *${name}* is priced per square meter at ${formatCurrency(product.PricePerSqm)}${toNumber(product.MinPrice) > 0 ? ` (minimum ${formatCurrency(product.MinPrice)})` : ''}. Please share size in mm (example: 1200x600) so I can quote accurately.`;
+            return `For *${name}*, I still need the size in mm to quote accurately (example: 1200x600).`;
         }
         const pricing = calculateSqmPrice(product, qty, dimensions.widthMm, dimensions.heightMm);
         materialTotal = pricing.total;
@@ -579,19 +622,75 @@ function buildQuoteForMatchedProduct(product, text) {
     const polesCost = toNumber(product.PolePrice) * qty;
     const installationFee = toNumber(product.InstallationFee) * qty;
     const total = materialTotal + designFee + polesCost + installationFee;
+    const details = [product.Size, product.Finish, product.SingleOrDoubleSided].filter(Boolean).join(' • ');
 
-    const lines = [
-        `Based on what you asked, I’d recommend *${name}*.`,
-        `Estimated pricing for quantity ${qty}${dimensionsLabel ? ` (${dimensionsLabel})` : ''}:`,
+    return [
+        `Best match from our catalog: *${name}*${details ? ` (${details})` : ''}.`,
+        `Quantity: ${qty}${dimensionsLabel ? ` | Size used: ${dimensionsLabel}` : ''}`,
         `• Material: ${formatCurrency(materialTotal)}`,
         designFee > 0 ? `• Design fee: ${formatCurrency(designFee)}` : '',
         polesCost > 0 ? `• Pole fee: ${formatCurrency(polesCost)}` : '',
         installationFee > 0 ? `• Installation fee: ${formatCurrency(installationFee)}` : '',
         `*Estimated total: ${formatCurrency(total)}*`,
-        'Would you like me to prepare this quote and help with turnaround/delivery next?'
-    ].filter(Boolean);
+        'Would you like me to confirm turnaround and delivery next?'
+    ].filter(Boolean).join('\n');
+}
 
-    return lines.join('\n');
+function buildCsvPricingReply(text = '') {
+    const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label|flyer|poster|invoice)\b/i.test(text);
+    if (!pricingIntent) return null;
+
+    const request = parseProductRequestDetails(text);
+    const ranked = rankProductsForText(text).filter((item) => item.score > 0);
+    if (!ranked.length) return null;
+    const topScore = ranked[0].score;
+    const candidatePool = ranked.filter((item) => item.score >= Math.max(1, topScore - 3)).map((item) => item.product);
+
+    const sideOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.SingleOrDoubleSided)).filter(Boolean))];
+    if (!request.side && sideOptions.length > 1) {
+        return `I can help with accurate pricing. Should this be *single-sided* or *double-sided*?`;
+    }
+
+    const finishOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.Finish)).filter(Boolean))];
+    if (!request.finish && finishOptions.length > 1) {
+        const preview = finishOptions.slice(0, 4).join(', ');
+        return `Great, I found matching products. Which finish do you prefer: ${preview}?`;
+    }
+
+    let filtered = [...candidatePool];
+    if (request.side) filtered = filtered.filter((item) => normalizeTextForMatch(item.SingleOrDoubleSided).includes(request.side));
+    if (request.finish) filtered = filtered.filter((item) => normalizeTextForMatch(item.Finish).includes(request.finish));
+    if (request.sizeToken) filtered = filtered.filter((item) => normalizeTextForMatch(item.Size).includes(request.sizeToken));
+    if (filtered.length === 0) filtered = candidatePool;
+
+    if (!request.quantity) {
+        const sample = filtered[0];
+        const name = sample?.Name || sample?.Subcategory || 'that product';
+        return `I found *${name}* options for you. Please share quantity so I can give the correct price.`;
+    }
+
+    const pricedCandidates = filtered.map((product) => {
+        const isSqm = String(product.PriceType || '').toLowerCase() === 'sqm';
+        if (isSqm && !request.dimensions) return { product, total: Number.POSITIVE_INFINITY };
+        let materialTotal = 0;
+        if (isSqm) {
+            materialTotal = calculateSqmPrice(product, request.quantity, request.dimensions.widthMm, request.dimensions.heightMm).total;
+        } else {
+            materialTotal = calculateFixedPrice(product, request.quantity).total;
+        }
+        const total = materialTotal
+            + (toNumber(product.DesignFee) * request.quantity)
+            + (toNumber(product.PolePrice) * request.quantity)
+            + (toNumber(product.InstallationFee) * request.quantity);
+        return { product, total };
+    }).filter((item) => Number.isFinite(item.total));
+
+    if (!pricedCandidates.length) {
+        return 'I’m almost ready to quote — please share the exact size in mm so I can calculate correctly.';
+    }
+
+    pricedCandidates.sort((a, b) => a.total - b.total);
+    return buildQuoteForMatchedProduct(pricedCandidates[0].product, request);
 }
 
 function buildConversationalFallback(userText = '') {
@@ -997,16 +1096,11 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
-                        const rankedProducts = rankProductsForText(text);
-                        const topMatch = rankedProducts[0];
-                        const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label)\b/i.test(text);
-                        if (topMatch && topMatch.score > 1 && pricingIntent) {
-                            const guidedQuote = buildQuoteForMatchedProduct(topMatch.product, text);
-                            if (guidedQuote) {
-                                await sendTrackedMessage(jid, guidedQuote);
-                                rememberConversationReply(text, guidedQuote);
-                                continue;
-                            }
+                        const csvPricingReply = buildCsvPricingReply(text);
+                        if (csvPricingReply) {
+                            await sendTrackedMessage(jid, csvPricingReply);
+                            rememberConversationReply(text, csvPricingReply);
+                            continue;
                         }
 
                         const learnedReply = generateLearnedReply(normalizedText);
