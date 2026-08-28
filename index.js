@@ -550,7 +550,7 @@ function buildConversationalFallback(userText = '') {
 
 function buildConversationContextForAI(jid, currentUserText = '') {
     if (!jid) return [];
-    const currentNormalized = String(currentUserText || '').trim().toLowerCase();
+    const currentNormalized = String(currentUserText || '').slice(0, 700).trim().toLowerCase();
     const recent = (chatLog.get(jid) || [])
         .filter((entry) => entry && entry.text)
         .slice(-9)
