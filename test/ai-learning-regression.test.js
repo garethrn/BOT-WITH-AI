@@ -40,6 +40,21 @@ test('generateLearnedReply matches partial natural-language overlap from taught 
     }
 });
 
+test('generateLearnedReply supports strict minScore for immediate rule enforcement', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.teachBehavior('rule', [
+            { when: 'how long for delivery', reply: 'Delivery is 2-3 working days.' }
+        ]);
+        const strict = learning.generateLearnedReply('how long for delivery', { minScore: 700 });
+        const partialStrict = learning.generateLearnedReply('please confirm delivery timing', { minScore: 700 });
+        assert.equal(strict, 'Delivery is 2-3 working days.');
+        assert.equal(partialStrict, null);
+    } finally {
+        cleanup(filePath);
+    }
+});
+
 test('importBackup accepts crypt14-style binary uploads and extracts transcript rules', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {

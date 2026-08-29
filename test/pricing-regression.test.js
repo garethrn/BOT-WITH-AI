@@ -31,3 +31,17 @@ test('buildProductContextForAI includes relevant CSV product pricing lines', asy
     assert.match(context, /priceType: fixed/i);
     assert.match(context, /R775\.00/i);
 });
+
+test('buildCsvPricingReply does not fall through to OpenAI-style null for pricing intent', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('how much for zzqvxx nonexisting catalog item quote');
+    assert.ok(reply);
+    assert.match(reply, /products catalog|please share quantity/i);
+});
+
+test('buildCsvPricingReply suggests closest catalog size when dimensions are not exact', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('quote qty 1 vinyl cut stickers standard single colors size 1150x100');
+    assert.ok(reply);
+    assert.match(reply, /closest catalog size/i);
+});

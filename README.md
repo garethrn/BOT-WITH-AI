@@ -216,7 +216,8 @@ In Railway logs, confirm startup messages similar to:
 ### 11) Teach response behavior
 1. In dashboard **Teach AI Behavior**, enter instruction text.
 2. Save teaching to persist behavior guidance.
-3. OpenAI uses this dashboard teaching plus imported backup rules as direction for generated replies.
+3. Rules added in teaching (including `when => reply` or `Q: ... | A: ...`) are applied immediately for strong matches before OpenAI generation.
+4. OpenAI uses this dashboard teaching plus imported backup rules as direction for generated replies.
 
 ### 12) Set up future Meta legal integration option
 1. In dashboard **Meta Legal Integration (Later)**, enter:
@@ -246,6 +247,7 @@ OpenAI live response check:
 - `GET /api/ai/openai-check` runs a real OpenAI request and returns `enabled`, `responding`, model, latency, and reply/error.
 - The dashboard top bar includes a **Test OpenAI** button to verify live OpenAI connectivity and response health.
 - OpenAI prompt now receives richer product lines from `products.csv` (id, sku, category, options, price type, and price values) to improve pricing relevance.
+- For pricing intents, the bot is constrained to catalog-driven CSV quoting and will ask clarifying questions or suggest closest catalog sizes instead of inventing prices.
 
 `POST /api/ai/upload-backup` accepts multipart fields:
 - `backup` (file, required)
@@ -262,6 +264,7 @@ Notes:
 - Teaching instructions can include direct rule lines (for immediate behavior), for example:
   - `client asks delivery time => Standard turnaround is 2-3 working days`
   - `Q: do you deliver | A: Yes, we can arrange delivery nationwide`
+- Successful OpenAI client replies are stored as reusable conversation patterns to reduce repeat token usage in future similar chats.
 
 ### 14) Operational notes
 - Keep `ADMIN_API_TOKEN` enabled in production.

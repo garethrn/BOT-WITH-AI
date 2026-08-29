@@ -663,7 +663,40 @@ function buildProductContextForAI(userText = '') {
     }).join('\n');
 }
 
-function buildQuoteForMatchedProduct(product, request) {
+function sizeDistanceScore(requestDimensions, productSize) {
+    if (!requestDimensions) return 0;
+    const normalizedSize = String(productSize || '')
+        .replace(/\b(width|height|length|w|h|l)\b/gi, ' ')
+        .replace(/\s+/g, ' ');
+    const parsed = parseDimensionsFromText(normalizedSize);
+    if (!parsed) return Number.POSITIVE_INFINITY;
+    const direct = Math.abs(parsed.widthMm - requestDimensions.widthMm) + Math.abs(parsed.heightMm - requestDimensions.heightMm);
+    const swapped = Math.abs(parsed.widthMm - requestDimensions.heightMm) + Math.abs(parsed.heightMm - requestDimensions.widthMm);
+    return Math.min(direct, swapped);
+}
+
+function buildCatalogSuggestionLines(items, limit = 4) {
+    return items.slice(0, limit).map((product, index) => {
+        const name = product.Name || product.Subcategory || product.Category || `Product ${index + 1}`;
+        const size = product.Size ? ` | size: ${product.Size}` : '';
+        return `${index + 1}. ${name}${size} | ${getProductDisplayPrice(product)}`;
+    }).join('\n');
+}
+
+function findCatalogSuggestions(request, limit = 5) {
+    const tokenCounted = products.map((product) => {
+        const blob = productSearchBlob(product);
+        const overlap = request.tokens.filter((token) => blob.includes(token)).length;
+        return { product, overlap };
+    }).filter((entry) => entry.overlap > 0)
+        .sort((a, b) => b.overlap - a.overlap)
+        .slice(0, limit)
+        .map((entry) => entry.product);
+    if (tokenCounted.length > 0) return tokenCounted;
+    return products.slice(0, limit);
+}
+
+function buildQuoteForMatchedProduct(product, request, options = {}) {
     if (!product) return null;
     const qty = request.quantity;
     const isSqm = String(product.PriceType || '').toLowerCase() === 'sqm';
@@ -696,6 +729,7 @@ function buildQuoteForMatchedProduct(product, request) {
 
     return [
         `Best match from our catalog: *${name}*${details ? ` (${details})` : ''}.`,
+        options.closestSizeNote || '',
         `Quantity: ${qty}${dimensionsLabel ? ` | Size used: ${dimensionsLabel}` : ''}`,
         `• Material: ${formatCurrency(materialTotal)}`,
         designFee > 0 ? `• Design fee: ${formatCurrency(designFee)}` : '',
@@ -755,7 +789,14 @@ function buildCsvPricingReply(text = '') {
 
     const request = parseProductRequestDetails(text);
     const ranked = rankProductsForText(text).filter((item) => item.score > 0);
-    if (!ranked.length) return null;
+    if (!ranked.length) {
+        const suggestions = findCatalogSuggestions(request, 4);
+        return [
+            'I can only quote using prices from our products catalog.',
+            'I could not find an exact product match yet. Please confirm the product name/category and size.',
+            suggestions.length ? `Closest catalog options:\n${buildCatalogSuggestionLines(suggestions, 4)}` : ''
+        ].filter(Boolean).join('\n\n');
+    }
     const topScore = ranked[0].score;
     const candidatePool = ranked.filter((item) => item.score >= Math.max(1, topScore - 3)).map((item) => item.product);
 
@@ -786,6 +827,9 @@ function buildCsvPricingReply(text = '') {
     const pricedCandidates = filtered.map((product) => {
         const isSqm = String(product.PriceType || '').toLowerCase() === 'sqm';
         if (isSqm && !request.dimensions) return { product, total: Number.POSITIVE_INFINITY };
+        const sizeDistance = request.dimensions && !isSqm
+            ? sizeDistanceScore(request.dimensions, product.Size)
+            : 0;
         let materialTotal = 0;
         if (isSqm) {
             materialTotal = calculateSqmPrice(product, request.quantity, request.dimensions.widthMm, request.dimensions.heightMm).total;
@@ -796,15 +840,39 @@ function buildCsvPricingReply(text = '') {
             + (toNumber(product.DesignFee) * request.quantity)
             + (toNumber(product.PolePrice) * request.quantity)
             + (toNumber(product.InstallationFee) * request.quantity);
-        return { product, total };
+        return { product, total, sizeDistance };
     }).filter((item) => Number.isFinite(item.total));
 
     if (!pricedCandidates.length) {
         return 'I’m almost ready to quote — please share the exact size in mm so I can calculate correctly.';
     }
 
-    pricedCandidates.sort((a, b) => a.total - b.total);
-    return buildQuoteForMatchedProduct(pricedCandidates[0].product, request);
+    pricedCandidates.sort((a, b) => {
+        const sizeDiff = Number(a.sizeDistance || 0) - Number(b.sizeDistance || 0);
+        if (request.dimensions && sizeDiff !== 0) return sizeDiff;
+        return a.total - b.total;
+    });
+    const best = pricedCandidates[0];
+    if (request.dimensions && String(best.product.PriceType || '').toLowerCase() !== 'sqm' && !Number.isFinite(best.sizeDistance)) {
+        const fixedWithSizes = filtered
+            .filter((item) => String(item.PriceType || '').toLowerCase() === 'fixed' && Number.isFinite(sizeDistanceScore(request.dimensions, item.Size)))
+            .sort((a, b) => sizeDistanceScore(request.dimensions, a.Size) - sizeDistanceScore(request.dimensions, b.Size));
+        if (fixedWithSizes.length > 0) {
+            return [
+                'I can only price using sizes that exist in our products catalog.',
+                `Requested size: ${request.dimensions.widthMm}x${request.dimensions.heightMm}mm`,
+                `Closest available sizes:\n${buildCatalogSuggestionLines(fixedWithSizes, 3)}`,
+                'Please confirm one of these sizes and I will quote immediately.'
+            ].join('\n\n');
+        }
+    }
+    const closestSizeNote = request.dimensions
+        && String(best.product.PriceType || '').toLowerCase() === 'fixed'
+        && Number.isFinite(best.sizeDistance)
+        && best.sizeDistance > 0
+        ? `Requested size ${request.dimensions.widthMm}x${request.dimensions.heightMm}mm is not an exact catalog row; using closest catalog size: ${best.product.Size}.`
+        : '';
+    return buildQuoteForMatchedProduct(best.product, request, { closestSizeNote });
 }
 
 function buildConversationalFallback(userText = '') {
@@ -1262,12 +1330,19 @@ async function startBot(fingerprintIndex = 0) {
                             continue;
                         }
 
+                        const strictLearnedReply = generateLearnedReply(text, { minScore: 700 });
+                        if (strictLearnedReply) {
+                            await sendTrackedMessage(jid, strictLearnedReply);
+                            rememberConversationReply(text, strictLearnedReply);
+                            continue;
+                        }
+
                         const openAIReply = await generateOpenAIReply(text, jid);
                         if (openAIReply) {
                             await sendTrackedMessage(jid, openAIReply);
                             rememberConversationReply(text, openAIReply);
                         } else {
-                            const learnedReply = generateLearnedReply(normalizedText);
+                            const learnedReply = generateLearnedReply(normalizedText, { minScore: 1 });
                             if (learnedReply) {
                                 await sendTrackedMessage(jid, learnedReply);
                                 rememberConversationReply(text, learnedReply);
