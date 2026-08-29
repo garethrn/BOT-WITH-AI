@@ -96,6 +96,7 @@
       <div class="row" style="margin-top:10px;">
         <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="min-width:260px;">
         <button id="refreshAll">Refresh</button>
+        <button id="openaiCheckBtn" type="button">Test OpenAI</button>
         <label class="badge pill-toggle"><input id="autoRefreshToggle" type="checkbox"> Auto Refresh</label>
         <select id="autoRefreshInterval">
           <option value="15000">15s</option>
@@ -107,6 +108,7 @@
         <button id="logoutWhatsapp" class="btn-danger">Logout WhatsApp</button>
       </div>
       <div id="topMessage" class="mini" style="margin-top:8px;"></div>
+      <div id="openaiCheckResult" class="mini" style="margin-top:6px;"></div>
     </div>
 
     <div class="tabs" id="tabsNav">
@@ -534,6 +536,27 @@
         await refreshAllData();
         setTopMessage('Refreshed');
       } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('openaiCheckBtn').onclick = async () => {
+      const btn = el('openaiCheckBtn');
+      try {
+        btn.disabled = true;
+        el('openaiCheckResult').textContent = 'Testing OpenAI...';
+        const data = await getJson('/api/ai/openai-check');
+        if (!data.enabled) {
+          el('openaiCheckResult').textContent = data.error || 'OpenAI is not enabled.';
+        } else if (data.responding) {
+          el('openaiCheckResult').textContent = `OpenAI OK • Model: ${data.model} • Latency: ${data.latencyMs || 0}ms • Reply: ${data.reply || 'OPENAI_OK'}`;
+        } else {
+          el('openaiCheckResult').textContent = `OpenAI check failed • Model: ${data.model} • Error: ${data.error || data.reply || 'No valid response'}`;
+        }
+        await refreshDashboardState();
+      } catch (e) {
+        el('openaiCheckResult').textContent = e.message;
+      } finally {
+        btn.disabled = false;
+      }
     };
     el('apiToken').addEventListener('input', updateQrLink);
     el('chatSearch').addEventListener('input', renderChats);

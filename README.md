@@ -240,6 +240,10 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 
 `/api/dashboard/state` includes an `openai` object showing whether OpenAI is enabled and which model is active.
 
+OpenAI live response check:
+- `GET /api/ai/openai-check` runs a real OpenAI request and returns `enabled`, `responding`, model, latency, and reply/error.
+- The dashboard top bar includes a **Test OpenAI** button to verify live OpenAI connectivity and response health.
+
 `POST /api/ai/upload-backup` accepts multipart fields:
 - `backup` (file, required)
 - `trainerName` (optional, used to extract your responses from WhatsApp transcript exports and message dumps)

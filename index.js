@@ -839,13 +839,16 @@ async function generateOpenAIReply(userText, jid = '') {
                         'Do not ask the customer to choose by product ID.',
                         'Keep the conversation going naturally with one helpful follow-up question.',
                         'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
+                        'Answer the customer’s latest message directly and do not give unrelated generic replies.',
+                        'Never invent pricing. Use only provided catalog context for prices, otherwise ask a clarifying question.',
                         `Catalog context:\n${productContext}`
                     ].join('\n\n')
                 },
                 ...conversationContext,
                 { role: 'user', content: trimmed.slice(0, 1000) }
             ],
-            max_tokens: 360
+            max_tokens: 360,
+            temperature: 0.2
         });
 
         const reply = completion.choices?.[0]?.message?.content
@@ -855,6 +858,47 @@ async function generateOpenAIReply(userText, jid = '') {
     } catch (error) {
         console.error('❌ OpenAI response failed:', error?.message || error);
         return null;
+    }
+}
+
+async function runOpenAIConnectivityCheck() {
+    if (!openaiClient) {
+        return {
+            enabled: false,
+            responding: false,
+            model: OPENAI_MODEL,
+            error: 'OPENAI_API_KEY is not configured.'
+        };
+    }
+
+    const started = Date.now();
+    try {
+        const completion = await openaiClient.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: [
+                { role: 'system', content: 'Reply with exactly: OPENAI_OK' },
+                { role: 'user', content: 'Health check' }
+            ],
+            max_tokens: 12,
+            temperature: 0
+        });
+        const reply = String(completion.choices?.[0]?.message?.content || '').trim();
+        const responding = reply.includes('OPENAI_OK');
+        return {
+            enabled: true,
+            responding,
+            model: OPENAI_MODEL,
+            latencyMs: Date.now() - started,
+            reply
+        };
+    } catch (error) {
+        return {
+            enabled: true,
+            responding: false,
+            model: OPENAI_MODEL,
+            latencyMs: Date.now() - started,
+            error: error?.message || 'OpenAI request failed.'
+        };
     }
 }
 
@@ -1175,18 +1219,17 @@ async function startBot(fingerprintIndex = 0) {
                             continue;
                         }
 
-                        const learnedReply = generateLearnedReply(normalizedText);
-                        if (learnedReply) {
-                            await sendTrackedMessage(jid, learnedReply);
-                            rememberConversationReply(text, learnedReply);
-                            continue;
-                        }
-
                         const openAIReply = await generateOpenAIReply(text, jid);
                         if (openAIReply) {
                             await sendTrackedMessage(jid, openAIReply);
                             rememberConversationReply(text, openAIReply);
                         } else {
+                            const learnedReply = generateLearnedReply(normalizedText);
+                            if (learnedReply) {
+                                await sendTrackedMessage(jid, learnedReply);
+                                rememberConversationReply(text, learnedReply);
+                                continue;
+                            }
                             pushLearningLead(jid, text);
                             const fallbackReply = buildConversationalFallback(text);
                             await sendTrackedMessage(jid, fallbackReply);
@@ -1546,6 +1589,11 @@ app.post('/api/ai/coach', writeRateLimiter, async (req, res) => {
             message: 'AI coach response generated.',
             reply
         });
+
+        app.get('/api/ai/openai-check', readRateLimiter, async (_req, res) => {
+            const result = await runOpenAIConnectivityCheck();
+            res.json(result);
+        });
     } catch (error) {
         return res.status(500).json({ error: 'Failed to generate AI coach response.' });
     }
@@ -1592,5 +1640,6 @@ module.exports = {
     parseProductRequestDetails,
     buildCsvPricingReply,
     selectProductsByQuantityTier,
-    pickBestQuantityTier
+    pickBestQuantityTier,
+    runOpenAIConnectivityCheck
 };
