@@ -603,19 +603,61 @@ function rankProductsForText(text = '') {
     })).sort((a, b) => b.score - a.score);
 }
 
+function productSearchBlob(product) {
+    return normalizeTextForMatch([
+        product.Name,
+        product.Category,
+        product.Subcategory,
+        product.SubSubcategory,
+        product.SKU,
+        product.Aliases,
+        product.Size,
+        product.Finish
+    ].join(' '));
+}
+
 function buildProductContextForAI(userText = '') {
+    const request = parseProductRequestDetails(userText);
+    const tokenSet = new Set(request.tokens);
+    if (request.sizeToken) tokenSet.add(request.sizeToken);
+    if (request.finish) tokenSet.add(request.finish);
+    if (request.side) tokenSet.add(request.side);
+    const queryTokens = Array.from(tokenSet).filter(Boolean);
+
+    const keywordMatches = products.filter((product) => {
+        if (queryTokens.length === 0) return false;
+        const blob = productSearchBlob(product);
+        const matched = queryTokens.filter((token) => blob.includes(token)).length;
+        return matched >= Math.min(2, queryTokens.length);
+    });
     const ranked = rankProductsForText(userText);
-    const selected = ranked.filter((item) => item.score > 0).slice(0, 12).map((item) => item.product);
-    const fallback = selected.length ? selected : products.slice(0, 12);
+    const rankedSelection = ranked.filter((item) => item.score > 0).slice(0, 20).map((item) => item.product);
+    const merged = [];
+    const seenIds = new Set();
+    for (const product of [...keywordMatches, ...rankedSelection]) {
+        const key = String(product.ID || product.SKU || product.Name);
+        if (seenIds.has(key)) continue;
+        seenIds.add(key);
+        merged.push(product);
+        if (merged.length >= 24) break;
+    }
+    const fallback = merged.length ? merged : products.slice(0, 24);
     if (!fallback.length) return 'No product catalog loaded.';
     return fallback.map((product) => {
         const name = product.Name || product.Subcategory || product.Category || 'Product';
-        const pricing = getProductDisplayPrice(product);
+        const pricing = String(product.PriceType || '').toLowerCase() === 'sqm'
+            ? `${formatCurrency(product.PricePerSqm)}/m²${toNumber(product.MinPrice) > 0 ? ` (min ${formatCurrency(product.MinPrice)})` : ''}`
+            : `${formatCurrency(product.FixedPrice)} per ${parseUnitsPerProduct(product.UnitsPerProduct) > 1 ? `${parseUnitsPerProduct(product.UnitsPerProduct)} units` : 'unit'}`;
         const options = [
+            product.ID ? `id: ${product.ID}` : '',
+            product.SKU ? `sku: ${product.SKU}` : '',
+            product.Category ? `category: ${product.Category}` : '',
+            product.Subcategory ? `subcategory: ${product.Subcategory}` : '',
             product.Size ? `size: ${product.Size}` : '',
             product.Finish ? `finish: ${product.Finish}` : '',
             product.SingleOrDoubleSided ? `sides: ${product.SingleOrDoubleSided}` : '',
-            product.UnitsPerProduct ? `qty option: ${product.UnitsPerProduct}` : ''
+            product.UnitsPerProduct ? `qty option: ${product.UnitsPerProduct}` : '',
+            product.PriceType ? `priceType: ${product.PriceType}` : ''
         ].filter(Boolean).join(' | ');
         return `- ${name} (${options || 'standard'}) | ${pricing}`;
     }).join('\n');
@@ -834,6 +876,7 @@ async function generateOpenAIReply(userText, jid = '') {
                         'You are a human-like WhatsApp receptionist and sales consultant.',
                         'Do not tell the customer to "type menu" or use command-style instructions unless specifically asked.',
                         'Use the product catalog below as the source of truth for products and pricing.',
+                        'Quote prices only from the catalog lines and mention the matched product name in your response.',
                         'Find likely products for the customer proactively based on their message.',
                         'When relevant, recommend up to 3 best-fit products by name and give pricing from the catalog context.',
                         'Do not ask the customer to choose by product ID.',
@@ -1638,6 +1681,7 @@ module.exports = {
     parseDimensionsFromText,
     parseQuantityFromText,
     parseProductRequestDetails,
+    buildProductContextForAI,
     buildCsvPricingReply,
     selectProductsByQuantityTier,
     pickBestQuantityTier,

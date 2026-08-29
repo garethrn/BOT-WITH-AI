@@ -22,3 +22,12 @@ test('buildCsvPricingReply selects fixed pricing tier matching quantity and opti
     assert.match(reply, /Business Cards 300GSM/i);
     assert.match(reply, /Estimated total: R775\.00/i);
 });
+
+test('buildProductContextForAI includes relevant CSV product pricing lines', async () => {
+    await pricing.loadProducts();
+    const context = pricing.buildProductContextForAI('quote 500 laminated double sided business cards');
+    assert.ok(context);
+    assert.match(context, /Business Cards 300GSM/i);
+    assert.match(context, /priceType: fixed/i);
+    assert.match(context, /R775\.00/i);
+});

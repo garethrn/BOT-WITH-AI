@@ -184,12 +184,14 @@ You can copy from `.env.example` and fill real values.
 ### 6) Deploy
 1. Trigger deployment (auto-triggers when connected to GitHub or after push).
 2. Wait until deployment status is successful.
+3. Nixpacks install uses `npm install --omit=dev` to avoid legacy npm production warning noise.
 
 ### 7) Check logs
 In Railway logs, confirm startup messages similar to:
 - web server listening
 - dashboard available
 - initializing WhatsApp engine
+- If you see `npm warn config production Use --omit=dev instead`, remove any Railway variable that sets `NPM_CONFIG_PRODUCTION` and redeploy.
 
 ### 8) Connect WhatsApp
 1. Open your Railway public URL + `/qr`
@@ -243,6 +245,7 @@ curl -i -H "x-admin-token: <token>" https://<your-railway-domain>/api/dashboard/
 OpenAI live response check:
 - `GET /api/ai/openai-check` runs a real OpenAI request and returns `enabled`, `responding`, model, latency, and reply/error.
 - The dashboard top bar includes a **Test OpenAI** button to verify live OpenAI connectivity and response health.
+- OpenAI prompt now receives richer product lines from `products.csv` (id, sku, category, options, price type, and price values) to improve pricing relevance.
 
 `POST /api/ai/upload-backup` accepts multipart fields:
 - `backup` (file, required)
