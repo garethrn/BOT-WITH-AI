@@ -1589,14 +1589,14 @@ app.post('/api/ai/coach', writeRateLimiter, async (req, res) => {
             message: 'AI coach response generated.',
             reply
         });
-
-        app.get('/api/ai/openai-check', readRateLimiter, async (_req, res) => {
-            const result = await runOpenAIConnectivityCheck();
-            res.json(result);
-        });
     } catch (error) {
         return res.status(500).json({ error: 'Failed to generate AI coach response.' });
     }
+});
+
+app.get('/api/ai/openai-check', readRateLimiter, async (_req, res) => {
+    const result = await runOpenAIConnectivityCheck();
+    res.json(result);
 });
 
 app.post('/api/meta/connect-later', writeRateLimiter, (req, res) => {
