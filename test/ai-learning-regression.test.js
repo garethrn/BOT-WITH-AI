@@ -55,6 +55,33 @@ test('generateLearnedReply supports strict minScore for immediate rule enforceme
     }
 });
 
+test('generateLearnedReply boosts taught rules over conversation memory during strict matching', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.rememberConversationReply('delivery time', 'Old memory reply.');
+        learning.teachBehavior('rule', [
+            { when: 'delivery time', reply: 'Delivery is 2-3 working days.' }
+        ]);
+        const strict = learning.generateLearnedReply('delivery time', { minScore: 450, includeMeta: true });
+        assert.equal(strict.reply, 'Delivery is 2-3 working days.');
+        assert.equal(strict.source, 'responseRules');
+    } finally {
+        cleanup(filePath);
+    }
+});
+
+test('rememberConversationReply ignores very short generic user prompts', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        const stored = learning.rememberConversationReply('hi', 'Hello and welcome.');
+        assert.equal(stored, false);
+        const reply = learning.generateLearnedReply('hi');
+        assert.equal(reply, null);
+    } finally {
+        cleanup(filePath);
+    }
+});
+
 test('importBackup accepts crypt14-style binary uploads and extracts transcript rules', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {

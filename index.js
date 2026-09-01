@@ -616,14 +616,19 @@ function inferCatalogFocusFromText(text = '') {
 }
 
 function inferActiveCatalogFocus(jid, currentText = '') {
-    if (!jid) return inferCatalogFocusFromText(currentText);
+    const currentFocus = inferCatalogFocusFromText(currentText);
+    if (currentFocus) return currentFocus;
+    if (!jid) return null;
     const recentUserText = (chatLog.get(jid) || [])
         .filter((entry) => entry?.role === 'user' && entry?.text)
-        .slice(-6)
+        .slice(-4)
         .map((entry) => String(entry.text || '').trim())
         .filter(Boolean);
-    const combined = [...recentUserText, String(currentText || '').trim()].filter(Boolean).join(' ');
-    return inferCatalogFocusFromText(combined);
+    for (let index = recentUserText.length - 1; index >= 0; index -= 1) {
+        const focus = inferCatalogFocusFromText(recentUserText[index]);
+        if (focus) return focus;
+    }
+    return null;
 }
 
 function productSearchBlob(product) {
@@ -982,6 +987,10 @@ async function generateOpenAIReply(userText, jid = '') {
             ? `Current customer product focus: ${activeFocus.subcategory || activeFocus.category || activeFocus.productName}. Stay on this product family unless the customer explicitly asks to switch products.`
             : 'Keep product suggestions tightly aligned to the customer’s current product request.';
         const conversationContext = buildConversationContextForAI(jid, trimmed);
+        const previousAssistantReply = conversationContext
+            .slice()
+            .reverse()
+            .find((item) => item.role === 'assistant')?.content || '';
         const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
             messages: [
@@ -999,6 +1008,8 @@ async function generateOpenAIReply(userText, jid = '') {
                         'Keep the conversation going naturally with one helpful follow-up question.',
                         'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
                         'Answer the customer’s latest message directly and do not give unrelated generic replies.',
+                        'Do not repeat the exact same response used in the previous assistant message.',
+                        previousAssistantReply ? `Previous assistant message to avoid repeating:\n${previousAssistantReply}` : '',
                         'Never invent pricing. Use only provided catalog context for prices, otherwise ask a clarifying question.',
                         focusInstruction,
                         `Catalog context:\n${productContext}`
@@ -1375,14 +1386,12 @@ async function startBot(fingerprintIndex = 0) {
                         const csvPricingReply = buildCsvPricingReply(text, jid);
                         if (csvPricingReply) {
                             await sendTrackedMessage(jid, csvPricingReply);
-                            rememberConversationReply(text, csvPricingReply);
                             continue;
                         }
 
-                        const strictLearnedReply = generateLearnedReply(text, { minScore: 700 });
-                        if (strictLearnedReply) {
-                            await sendTrackedMessage(jid, strictLearnedReply);
-                            rememberConversationReply(text, strictLearnedReply);
+                        const strictLearnedReply = generateLearnedReply(text, { minScore: 450, includeMeta: true });
+                        if (strictLearnedReply && (strictLearnedReply.source === 'responseRules' || strictLearnedReply.score >= 700)) {
+                            await sendTrackedMessage(jid, strictLearnedReply.reply);
                             continue;
                         }
 
@@ -1394,13 +1403,11 @@ async function startBot(fingerprintIndex = 0) {
                             const learnedReply = generateLearnedReply(normalizedText, { minScore: 1 });
                             if (learnedReply) {
                                 await sendTrackedMessage(jid, learnedReply);
-                                rememberConversationReply(text, learnedReply);
                                 continue;
                             }
                             pushLearningLead(jid, text);
                             const fallbackReply = buildConversationalFallback(text, jid);
                             await sendTrackedMessage(jid, fallbackReply);
-                            rememberConversationReply(text, fallbackReply);
                         }
                     }
                 } catch (err) {
