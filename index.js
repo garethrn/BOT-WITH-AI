@@ -7,12 +7,10 @@ const {
 } = baileys;
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
-const csv = require('csv-parser');
 const pino = require('pino');
 const nodemailer = require('nodemailer');
 const qrcodeImg = require('qrcode');
 const path = require('path');
-const { Readable } = require('stream');
 const express = require('express');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
@@ -26,6 +24,11 @@ const {
     buildOpenAISystemPrompt,
     rememberConversationReply
 } = require('./lib/ai-learning');
+const {
+    parseProductsCsvStream,
+    parseProductsCsvContent,
+    validateProductCsvHeaders
+} = require('./lib/csv-loader');
 const { handleQuoteConversationMessage } = require('./lib/quote-state-machine');
 
 const BROWSER_FINGERPRINTS = [
@@ -82,28 +85,6 @@ let contactNames = {};
 let contactPhones = {};
 let conversationTabOverrides = {};
 
-const PRODUCT_FIELD_ALIASES = {
-    ID: ['ID', 'ProductID', 'Code'],
-    SKU: ['SKU', 'Sku', 'ProductSKU'],
-    Category: ['Category', 'Department'],
-    Subcategory: ['Subcategory', 'Sub Category', 'Product Type', 'Type'],
-    Name: ['Name', 'Product', 'Product Name', 'Item Name', 'Description'],
-    Size: ['Size', 'Dimensions'],
-    Finish: ['Finish', 'Material'],
-    SingleOrDoubleSided: ['SingleOrDoubleSided', 'Single Or Double Sided', 'Sides'],
-    UnitsPerProduct: ['UnitsPerProduct', 'Units Per Product', 'Pack Size', 'Quantity', 'Qty'],
-    PriceType: ['PriceType', 'Price Type', 'Pricing Type'],
-    PricePerSqm: ['PricePerSqm', 'Price Per Sqm', 'Sqm Price'],
-    FixedPrice: ['FixedPrice', 'Fixed Price', 'Price', 'Selling Price', 'Unit Price', 'Amount'],
-    MinPrice: ['MinPrice', 'Minimum Price'],
-    DesignFee: ['DesignFee', 'Design Fee'],
-    PolePrice: ['PolePrice', 'Pole Price'],
-    InstallationFee: ['InstallationFee', 'Installation Fee'],
-    Aliases: ['Aliases', 'Alias', 'Keywords', 'Tags'],
-    MinOrderQty: ['MinOrderQty', 'Min Order Qty', 'Minimum Order Qty', 'Minimum Qty', 'Min Qty'],
-    UnitPricing: ['UnitPricing', 'Unit Pricing', 'Pricing Unit', 'Rate Type']
-};
-
 function loadJsonFile(filePath, fallbackValue) {
     try {
         if (!fs.existsSync(filePath)) return fallbackValue;
@@ -128,82 +109,6 @@ function toNumber(value, fallback = 0) {
 
 function formatCurrency(value) {
     return `R${toNumber(value).toFixed(2)}`;
-}
-
-function normalizeCsvHeader(header) {
-    return String(header || '')
-        .replace(/^\uFEFF/, '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '');
-}
-
-function getFirstMappedValue(row, fieldName) {
-    const normalizedRow = Object.entries(row || {}).reduce((acc, [key, value]) => {
-        acc[normalizeCsvHeader(key)] = value;
-        return acc;
-    }, {});
-    const aliases = PRODUCT_FIELD_ALIASES[fieldName] || [fieldName];
-    for (const alias of aliases) {
-        const value = normalizedRow[normalizeCsvHeader(alias)];
-        if (value !== undefined && value !== null && String(value).trim() !== '') {
-            return String(value).trim();
-        }
-    }
-    return '';
-}
-
-function normalizeProductRecord(row) {
-    const product = {
-        ID: getFirstMappedValue(row, 'ID'),
-        SKU: getFirstMappedValue(row, 'SKU'),
-        Category: getFirstMappedValue(row, 'Category'),
-        Subcategory: getFirstMappedValue(row, 'Subcategory'),
-        Name: getFirstMappedValue(row, 'Name'),
-        Size: getFirstMappedValue(row, 'Size'),
-        Finish: getFirstMappedValue(row, 'Finish'),
-        SingleOrDoubleSided: getFirstMappedValue(row, 'SingleOrDoubleSided'),
-        UnitsPerProduct: getFirstMappedValue(row, 'UnitsPerProduct'),
-        PriceType: getFirstMappedValue(row, 'PriceType').toLowerCase(),
-        PricePerSqm: getFirstMappedValue(row, 'PricePerSqm'),
-        FixedPrice: getFirstMappedValue(row, 'FixedPrice'),
-        MinPrice: getFirstMappedValue(row, 'MinPrice'),
-        DesignFee: getFirstMappedValue(row, 'DesignFee'),
-        PolePrice: getFirstMappedValue(row, 'PolePrice'),
-        InstallationFee: getFirstMappedValue(row, 'InstallationFee'),
-        Aliases: getFirstMappedValue(row, 'Aliases'),
-        MinOrderQty: getFirstMappedValue(row, 'MinOrderQty'),
-        UnitPricing: getFirstMappedValue(row, 'UnitPricing')
-    };
-
-    if (!product.Name) product.Name = product.Subcategory || product.Category || 'Product';
-    if (product.PriceType !== 'sqm' && product.PriceType !== 'fixed') {
-        product.PriceType = product.PricePerSqm ? 'sqm' : 'fixed';
-    }
-    return product;
-}
-
-function parseProductsCsvStream(stream) {
-    return new Promise((resolve, reject) => {
-        const rows = [];
-        stream
-            .pipe(csv({ mapHeaders: ({ header }) => String(header || '').replace(/^\uFEFF/, '').trim() }))
-            .on('data', (row) => rows.push(row))
-            .on('error', reject)
-            .on('end', () => {
-                const normalizedProducts = rows.map((row) => normalizeProductRecord(row)).filter(Boolean);
-                const validProducts = normalizedProducts.filter((product) => {
-                    const hasName = Boolean((product.Name || '').trim());
-                    const hasPrice = toNumber(product.FixedPrice) > 0 || toNumber(product.PricePerSqm) > 0;
-                    return hasName && hasPrice;
-                });
-                if (validProducts.length === 0) {
-                    reject(new Error('No valid product rows found in CSV.'));
-                    return;
-                }
-                resolve(validProducts);
-            });
-    });
 }
 
 function parseUnitsPerProduct(value) {
@@ -1056,17 +961,17 @@ async function generateOpenAIReply(userText, jid = '') {
                         buildOpenAISystemPrompt(),
                         'You are a human-like WhatsApp receptionist and sales consultant.',
                         'Do not tell the customer to "type menu" or use command-style instructions unless specifically asked.',
-                        'Use the product catalog below as the source of truth for products and pricing.',
-                        'Quote prices only from the catalog lines and mention the matched product name in your response.',
+                        'Use the product catalog below only for product context and naming consistency.',
+                        'Do not calculate, estimate, or infer pricing in this step; pricing is handled by deterministic quote services.',
                         'Find likely products for the customer proactively based on their message.',
-                        'When relevant, recommend up to 3 best-fit products by name and give pricing from the catalog context.',
+                        'When relevant, recommend up to 3 best-fit products by name without giving a calculated price.',
                         'Do not ask the customer to choose by product ID.',
                         'Keep the conversation going naturally with one helpful follow-up question.',
                         'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
                         'Answer the customer’s latest message directly and do not give unrelated generic replies.',
                         'Do not repeat the exact same response used in the previous assistant message.',
                         previousAssistantReply ? `Previous assistant message to avoid repeating:\n${previousAssistantReply}` : '',
-                        'Never invent pricing. Use only provided catalog context for prices, otherwise ask a clarifying question.',
+                        'Never invent pricing or product options.',
                         focusInstruction,
                         `Catalog context:\n${productContext}`
                     ].join('\n\n')
@@ -1626,22 +1531,13 @@ app.post('/api/admin/products/upload', writeRateLimiter, productsCsvUpload.singl
     const content = req.file.buffer.toString('utf8').replace(/\uFEFF/g, '').trim();
     if (!content) return res.status(400).json({ error: 'CSV file is empty.' });
 
-    const headerCells = content
-        .split(/\r?\n/)[0]
-        .split(',')
-        .map((cell) => normalizeCsvHeader(cell.trim().replace(/^"|"$/g, '')));
-    const hasId = headerCells.includes(normalizeCsvHeader('ID'));
-    const hasName = headerCells.includes(normalizeCsvHeader('Name')) || headerCells.includes(normalizeCsvHeader('Subcategory'));
-    const hasPrice =
-        headerCells.includes(normalizeCsvHeader('FixedPrice')) ||
-        headerCells.includes(normalizeCsvHeader('PricePerSqm')) ||
-        headerCells.includes(normalizeCsvHeader('Price'));
-    if (!hasId || !hasName || !hasPrice) {
+    const headerValidation = validateProductCsvHeaders(content);
+    if (!headerValidation.ok) {
         return res.status(400).json({ error: 'CSV header must include ID plus Name/Subcategory and FixedPrice/PricePerSqm (or Price).' });
     }
 
     try {
-        const parsedProducts = await parseProductsCsvStream(Readable.from([content]));
+        const parsedProducts = await parseProductsCsvContent(content);
         fs.writeFileSync(CSV_FILE, content.endsWith('\n') ? content : `${content}\n`);
         products = parsedProducts;
         return res.json({ message: 'Products CSV uploaded successfully.', products: products.length });
