@@ -316,8 +316,9 @@ Notes:
 
 - The bot now supports the `garethrn-patch-1` style product CSV (fixed pricing and `sqm` pricing in the same file).
 - CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
-- Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`.
+- Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`, `Aliases`, `MinOrderQty`, `UnitPricing`.
 - Keep `PriceType` accurate per row (`fixed` or `sqm`) so OpenAI and quote matching use the correct pricing method.
+- For `fixed` rows priced per unit with a minimum order, set `UnitsPerProduct` using `>qty` (example `>50`) or set `MinOrderQty` with `UnitPricing=unit`.
 - Customer quote flow:
   - Natural conversation is supported by default (human-like receptionist/sales style)
   - `menu` now acts as a conversational catalog request (not a command-driven prompt)

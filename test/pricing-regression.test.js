@@ -53,3 +53,26 @@ test('buildProductContextForAI keeps signage focus and avoids unrelated business
     assert.match(context, /ACM Signs|Outdoor Signs/i);
     assert.doesNotMatch(context, /Business Cards 300GSM/i);
 });
+
+test('buildCsvPricingReply enforces minimum order quantity for per-unit rows', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('please quote 20 bookmarks laminated single sided');
+    assert.ok(reply);
+    assert.match(reply, /minimum order is 50/i);
+});
+
+test('buildCsvPricingReply uses human phrasing when quantity is missing', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('quote laminated double sided business cards');
+    assert.ok(reply);
+    assert.match(reply, /what quantity/i);
+    assert.doesNotMatch(reply, /\bI found\b/i);
+});
+
+test('buildCsvPricingReply asks a signage-specific follow-up without drifting products', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('i need an outdoor signage quote for acm');
+    assert.ok(reply);
+    assert.match(reply, /single-sided|double-sided|size/i);
+    assert.doesNotMatch(reply, /business cards/i);
+});

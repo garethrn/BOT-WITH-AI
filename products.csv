@@ -1,4 +1,4 @@
-ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,SingleOrDoubleSided,UnitsPerProduct,PriceType,PricePerSqm,FixedPrice,MinPrice,DesignFee,PolesAvailable,PolePrice,InstallationFee,RequiresArtwork
+ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,SingleOrDoubleSided,UnitsPerProduct,PriceType,PricePerSqm,FixedPrice,MinPrice,DesignFee,PolesAvailable,PolePrice,InstallationFee,RequiresArtwork,Aliases,MinOrderQty,UnitPricing
 1,PP-0001,Paper Printing,Business Cards,,,Business Cards 300GSM ,Standard 90x55mm,Semi Gloss,Single sided ,100,fixed,,R120.00,,0,no,,0,yes
 2,PP-0002,Paper Printing,Business Cards,,,Business Cards 300GSM ,Standard 90x55mm,Semi Gloss,Single sided ,250,fixed,,R230.00,,0,no,,0,yes
 3,PP-0003,Paper Printing,Business Cards,,,Business Cards 300GSM ,Standard 90x55mm,Semi Gloss,Single sided ,500,fixed,,R350.00,,0,no,,0,yes
@@ -85,21 +85,21 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 84,PP-0084,Paper Printing,Photocopies,,,Photocopies Black and white ,A3 (297 x 210) mm,300gsm - Laminated ,Double Sided ,1,fixed,,R16.00,,0,no,,0,yes
 85,PP-0085,Paper Printing,Photocopies,,,Photocopies Color ,A4 (210 x 297) mm,300gsm - Laminated ,Double Sided ,1,fixed,,R13.00,,0,no,,0,yes
 86,PP-0086,Paper Printing,Photocopies,,,Photocopies Color ,A3 (297 x 210) mm,300gsm - Laminated ,Double Sided ,1,fixed,,R25.00,,0,no,,0,yes
-87,PP-0087,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM ,Single sided ,>50,fixed,,R3.00,,120,no,,0,yes
-88,PP-0088,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM,Double Sided ,>50,fixed,,R5.00,,120,no,,0,yes
-89,PP-0089,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated ,Single sided ,>50,fixed,,R4.00,,120,no,,0,yes
-90,PP-0090,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated,Double Sided ,>50,fixed,,R6.00,,120,no,,0,yes
-91,PP-0091,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Single sided ,>20,fixed,,R12.00,,120,no,,0,yes
-92,PP-0092,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Semi gloss ,Single sided ,>20,fixed,,R15.00,,120,no,,0,yes
-93,PP-0093,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Double Sided ,>20,fixed,,R17.00,,240,no,,0,yes
-94,PP-0094,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Semi gloss ,Double Sided ,>20,fixed,,R22.00,,240,no,,0,yes
-95,PP-0095,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Laminated  ,Single sided ,>20,fixed,,R22.00,,120,no,,0,yes
-96,PP-0096,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Laminated  ,Single sided ,>20,fixed,,R25.00,,120,no,,0,yes
-97,PP-0097,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Laminated  ,Double Sided ,>20,fixed,,R27.00,,240,no,,0,yes
-98,PP-0098,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Laminated  ,Double Sided ,>20,fixed,,R32.00,,240,no,,0,yes
-99,PP-0099,Paper Printing,Calendars,,,A3 Calendars - with punched hole ,420 x 297mm ,300GSM ,Single sided ,>50,fixed,,R9.00,,250,no,,0,yes
-100,PP-0100,Paper Printing,Calendars,,,A4 Calendars - with punched hole ,210x 297mm ,300GSM ,Single sided ,>50,fixed,,R7.00,,250,no,,0,yes
-101,PP-0101,Paper Printing,Calendars,,,A4 Tent Calendars ,99 x 99 x 99 x 210mm,300GSM ,Single sided ,>51,fixed,,R12.00,,250,no,,0,yes
+87,PP-0087,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM ,Single sided ,>50,fixed,,R3.00,,120,no,,0,yes,bookmarks;bookmark printing,50,unit
+88,PP-0088,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM,Double Sided ,>50,fixed,,R5.00,,120,no,,0,yes,bookmarks;bookmark printing,50,unit
+89,PP-0089,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated ,Single sided ,>50,fixed,,R4.00,,120,no,,0,yes,bookmarks laminated;bookmark printing,50,unit
+90,PP-0090,Paper Printing,Bookmarks,,,Bookmarks ,190 x 60mm,300 GSM - Laminated,Double Sided ,>50,fixed,,R6.00,,120,no,,0,yes,bookmarks laminated;bookmark printing,50,unit
+91,PP-0091,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Single sided ,>20,fixed,,R12.00,,120,no,,0,yes,company folders;presentation folders,20,unit
+92,PP-0092,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Semi gloss ,Single sided ,>20,fixed,,R15.00,,120,no,,0,yes,company folders sleeve;presentation folders,20,unit
+93,PP-0093,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Semi gloss ,Double Sided ,>20,fixed,,R17.00,,240,no,,0,yes,company folders;presentation folders,20,unit
+94,PP-0094,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Semi gloss ,Double Sided ,>20,fixed,,R22.00,,240,no,,0,yes,company folders sleeve;presentation folders,20,unit
+95,PP-0095,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Laminated  ,Single sided ,>20,fixed,,R22.00,,120,no,,0,yes,company folders laminated;presentation folders,20,unit
+96,PP-0096,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Laminated  ,Single sided ,>20,fixed,,R25.00,,120,no,,0,yes,company folders laminated sleeve;presentation folders,20,unit
+97,PP-0097,Paper Printing,Folders,,,SRA3 Company folders ,450 x 320mm ,300GSM Laminated  ,Double Sided ,>20,fixed,,R27.00,,240,no,,0,yes,company folders laminated;presentation folders,20,unit
+98,PP-0098,Paper Printing,Folders,,,SRA3 Company folders with sleeve ,450 x 320mm,300GSM Laminated  ,Double Sided ,>20,fixed,,R32.00,,240,no,,0,yes,company folders laminated sleeve;presentation folders,20,unit
+99,PP-0099,Paper Printing,Calendars,,,A3 Calendars - with punched hole ,420 x 297mm ,300GSM ,Single sided ,>50,fixed,,R9.00,,250,no,,0,yes,calendar print;a3 calendar,50,unit
+100,PP-0100,Paper Printing,Calendars,,,A4 Calendars - with punched hole ,210x 297mm ,300GSM ,Single sided ,>50,fixed,,R7.00,,250,no,,0,yes,calendar print;a4 calendar,50,unit
+101,PP-0101,Paper Printing,Calendars,,,A4 Tent Calendars ,99 x 99 x 99 x 210mm,300GSM ,Single sided ,>51,fixed,,R12.00,,250,no,,0,yes,tent calendar;desk calendar,51,unit
 102,LBL-0102,Label Printing ,Paper Labels,,,Paper budget black and white - non waterproof,27 x 13mm,Self Adhesive ,Single sided ,1000,fixed,,R70.00,,0,no,,0,yes
 103,LBL-0103,Label Printing ,Paper Labels,,,Paper budget black and white - non waterproof,40 x 26mm,Self Adhesive ,Single sided ,1000,fixed,,R90.00,,0,no,,0,yes
 104,LBL-0104,Label Printing ,Vinyl Labels,,,Budget Vinyl Labels 80 Micron Waterproof ,Custom,Self Adhesive ,Single sided ,1,sqm,120,,60,120,no,,0,yes

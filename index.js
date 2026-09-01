@@ -97,7 +97,9 @@ const PRODUCT_FIELD_ALIASES = {
     DesignFee: ['DesignFee', 'Design Fee'],
     PolePrice: ['PolePrice', 'Pole Price'],
     InstallationFee: ['InstallationFee', 'Installation Fee'],
-    Aliases: ['Aliases', 'Alias', 'Keywords', 'Tags']
+    Aliases: ['Aliases', 'Alias', 'Keywords', 'Tags'],
+    MinOrderQty: ['MinOrderQty', 'Min Order Qty', 'Minimum Order Qty', 'Minimum Qty', 'Min Qty'],
+    UnitPricing: ['UnitPricing', 'Unit Pricing', 'Pricing Unit', 'Rate Type']
 };
 
 function loadJsonFile(filePath, fallbackValue) {
@@ -167,7 +169,9 @@ function normalizeProductRecord(row) {
         DesignFee: getFirstMappedValue(row, 'DesignFee'),
         PolePrice: getFirstMappedValue(row, 'PolePrice'),
         InstallationFee: getFirstMappedValue(row, 'InstallationFee'),
-        Aliases: getFirstMappedValue(row, 'Aliases')
+        Aliases: getFirstMappedValue(row, 'Aliases'),
+        MinOrderQty: getFirstMappedValue(row, 'MinOrderQty'),
+        UnitPricing: getFirstMappedValue(row, 'UnitPricing')
     };
 
     if (!product.Name) product.Name = product.Subcategory || product.Category || 'Product';
@@ -206,11 +210,35 @@ function parseUnitsPerProduct(value) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function getFixedPricingRule(product = {}) {
+    const rawUnits = String(product.UnitsPerProduct || '').trim();
+    const parsedUnits = parseUnitsPerProduct(rawUnits);
+    const explicitMinQty = toNumber(product.MinOrderQty, 0);
+    const hasGreaterThanRule = /^[>\s]*=?\s*\d+/.test(rawUnits) || rawUnits.includes('>');
+    const unitPricingHint = /\bunit\b/i.test(String(product.UnitPricing || ''));
+    const pricingMode = hasGreaterThanRule || unitPricingHint ? 'unit' : 'pack';
+    const minQty = pricingMode === 'unit'
+        ? (explicitMinQty > 0 ? explicitMinQty : parsedUnits)
+        : 0;
+    return {
+        pricingMode,
+        unitsPerPack: parsedUnits,
+        minQty
+    };
+}
+
 function calculateFixedPrice(product, qty) {
-    const unitsPerPack = parseUnitsPerProduct(product.UnitsPerProduct);
+    const pricingRule = getFixedPricingRule(product);
+    const unitsPerPack = pricingRule.unitsPerPack;
     const packPrice = toNumber(product.FixedPrice);
+    if (pricingRule.pricingMode === 'unit') {
+        if (pricingRule.minQty > 0 && qty < pricingRule.minQty) {
+            return { total: Number.NaN, unitsPerPack: 1, packs: 0, pricingMode: 'unit', minQty: pricingRule.minQty };
+        }
+        return { total: qty * packPrice, unitsPerPack: 1, packs: qty, pricingMode: 'unit', minQty: pricingRule.minQty };
+    }
     const packs = Math.ceil(qty / unitsPerPack);
-    return { total: packs * packPrice, unitsPerPack, packs };
+    return { total: packs * packPrice, unitsPerPack, packs, pricingMode: 'pack', minQty: 0 };
 }
 
 function calculateSqmPrice(product, qty, widthMm, heightMm) {
@@ -226,7 +254,12 @@ function getProductDisplayPrice(product) {
         const minText = minPrice > 0 ? ` (min ${formatCurrency(minPrice)})` : '';
         return `${formatCurrency(product.PricePerSqm)}/m²${minText}`;
     }
-    const unitsPerPack = parseUnitsPerProduct(product.UnitsPerProduct);
+    const pricingRule = getFixedPricingRule(product);
+    if (pricingRule.pricingMode === 'unit') {
+        const minText = pricingRule.minQty > 0 ? ` (min qty ${pricingRule.minQty})` : '';
+        return `${formatCurrency(product.FixedPrice)}/unit${minText}`;
+    }
+    const unitsPerPack = pricingRule.unitsPerPack;
     const unitText = unitsPerPack > 1 ? `/${unitsPerPack} units` : '/unit';
     return `${formatCurrency(product.FixedPrice)}${unitText}`;
 }
@@ -741,7 +774,7 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
     const name = product.Name || product.Subcategory || 'Product';
 
     if (!qty) {
-        return `I can quote *${name}* for you. Please share quantity so I can calculate the correct price.`;
+        return `Great choice on *${name}*. What quantity would you like me to quote?`;
     }
 
     let materialTotal = 0;
@@ -756,6 +789,9 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
         dimensionsLabel = `${dimensions.widthMm}x${dimensions.heightMm}mm`;
     } else {
         const pricing = calculateFixedPrice(product, qty);
+        if (!Number.isFinite(pricing.total)) {
+            return `For *${name}*, the minimum order quantity is ${pricing.minQty}. What quantity should I use for your quote?`;
+        }
         materialTotal = pricing.total;
     }
 
@@ -766,7 +802,7 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
     const details = [product.Size, product.Finish, product.SingleOrDoubleSided].filter(Boolean).join(' • ');
 
     return [
-        `Best match from our catalog: *${name}*${details ? ` (${details})` : ''}.`,
+        `Based on your details, the closest match is *${name}*${details ? ` (${details})` : ''}.`,
         options.closestSizeNote || '',
         `Quantity: ${qty}${dimensionsLabel ? ` | Size used: ${dimensionsLabel}` : ''}`,
         `• Material: ${formatCurrency(materialTotal)}`,
@@ -831,8 +867,8 @@ function buildCsvPricingReply(text = '', jid = '') {
         const suggestions = findCatalogSuggestions(request, 4);
         return [
             'I can only quote using prices from our products catalog.',
-            'I could not find an exact product match yet. Please confirm the product name/category and size.',
-            suggestions.length ? `Closest catalog options:\n${buildCatalogSuggestionLines(suggestions, 4)}` : ''
+            'To make sure I quote correctly, please confirm the product type and size you need.',
+            suggestions.length ? `Closest catalog matches right now:\n${buildCatalogSuggestionLines(suggestions, 4)}` : ''
         ].filter(Boolean).join('\n\n');
     }
     const topScore = ranked[0].score;
@@ -851,13 +887,19 @@ function buildCsvPricingReply(text = '', jid = '') {
 
     const sideOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.SingleOrDoubleSided)).filter(Boolean))];
     if (!request.side && sideOptions.length > 1) {
-        return `I can help with accurate pricing. Should this be *single-sided* or *double-sided*?`;
+        return 'To quote correctly, should this be *single-sided* or *double-sided*?';
+    }
+
+    const sizeOptions = [...new Set(candidatePool.map((item) => String(item.Size || '').trim()).filter((value) => value && !/^custom$/i.test(value)))];
+    if (!request.sizeToken && !request.dimensions && sizeOptions.length > 1) {
+        const preview = sizeOptions.slice(0, 3).join(', ');
+        return `What size do you need for this job? For example: ${preview}.`;
     }
 
     const finishOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.Finish)).filter(Boolean))];
     if (!request.finish && finishOptions.length > 1) {
         const preview = finishOptions.slice(0, 4).join(', ');
-        return `Great, I found matching products. Which finish do you prefer: ${preview}?`;
+        return `Which finish would you like: ${preview}?`;
     }
 
     let filtered = [...candidatePool];
@@ -870,7 +912,7 @@ function buildCsvPricingReply(text = '', jid = '') {
     if (!request.quantity) {
         const sample = filtered[0];
         const name = sample?.Name || sample?.Subcategory || 'that product';
-        return `I found *${name}* options for you. Please share quantity so I can give the correct price.`;
+        return `Thanks — for *${name}*, what quantity should I quote?`;
     }
 
     const pricedCandidates = filtered.map((product) => {
@@ -893,6 +935,18 @@ function buildCsvPricingReply(text = '', jid = '') {
     }).filter((item) => Number.isFinite(item.total));
 
     if (!pricedCandidates.length) {
+        const minimumQtyRows = filtered
+            .filter((item) => String(item.PriceType || '').toLowerCase() === 'fixed')
+            .map((item) => {
+                const rule = getFixedPricingRule(item);
+                return { product: item, rule };
+            })
+            .filter((entry) => entry.rule.pricingMode === 'unit' && entry.rule.minQty > request.quantity)
+            .sort((a, b) => a.rule.minQty - b.rule.minQty);
+        if (minimumQtyRows.length > 0) {
+            const minQty = minimumQtyRows[0].rule.minQty;
+            return `For this product range, the minimum order is ${minQty}. Please confirm your quantity and I’ll quote straight away.`;
+        }
         return 'I’m almost ready to quote — please share the exact size in mm so I can calculate correctly.';
     }
 
