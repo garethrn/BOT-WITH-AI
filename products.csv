@@ -243,7 +243,7 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 242,BAN-0242,Flat Banners - outdoor / indoor ,PVC Banners,,,PVC Banner / Birthday / advertising ,3000 x 1600mm ,PVC,,1,fixed,,R720.00,,,,,,yes
 243,BAN-0243,Flat Banners - outdoor / indoor ,PVC Banners,,,PVC Banner / Birthday / advertising ,4000 x 1600mm,PVC,,1,fixed,,R960.00,,,,,,yes
 244,BAN-0244,Flat Banners - outdoor / indoor ,PVC Banners,,,PVC Banner / Birthday / advertising ,5000 x 1600mm ,PVC,,1,fixed,,"R1,200.00",,,,,,yes
-245,BAN-0245,Flat Banners - outdoor / indoor ,PVC Banners,,,PVC Banner / Birthday / advertising ,Custom,PVC,,1,,150,,,,,,,yes
+245,BAN-0245,Flat Banners - outdoor / indoor ,PVC Banners,,,PVC Banner / Birthday / advertising ,Custom,PVC,,1,sqm,150,,,,,,,yes
 246,CBM-0246,Canvas Block Mount ,Canvas Prints,,,Canvas Digitally Printed & mounted on a Wooden Block,A4,PVC,,1,fixed,,R200.00,,,,,,yes
 247,CBM-0247,Canvas Block Mount ,Canvas Prints,,,Canvas Digitally Printed & mounted on a Wooden Block,A3,PVC,,1,fixed,,R275.00,,,,,,yes
 248,CBM-0248,Canvas Block Mount ,Canvas Prints,,,Canvas Digitally Printed & mounted on a Wooden Block,A2,PVC,,1,fixed,,R450.00,,,,,,yes
@@ -252,7 +252,7 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 251,MAG-0251,Magnetic Signs ,Vehicle Magnets,,,Vehicle Magnets - Pair ,600 x 220mm,Gloss Laminate ,,2,fixed,,R425.00,,,,,,yes
 252,MAG-0252,Magnetic Signs ,Vehicle Magnets,,,Vehicle Magnets - Pair ,600 x 270mm,Gloss Laminate ,,2,fixed,,R450.00,,,,,,yes
 253,MAG-0253,Magnetic Signs ,Vehicle Magnets,,,Vehicle Magnets - Pair ,600 x 300mm,Gloss Laminate ,,2,fixed,,R475.00,,,,,,yes
-254,MAG-0254,Magnetic Signs ,Vehicle Magnets,,,Vehicle Magnets - Pair ,Custom,Gloss Laminate ,,2,,1500,,,,,,,yes
+254,MAG-0254,Magnetic Signs ,Vehicle Magnets,,,Vehicle Magnets - Pair ,Custom,Gloss Laminate ,,2,sqm,1500,,,,,,,yes
 255,VB-0255,Vehicle Branding ,Vinyl Stickers,,,Vinyl cut stickers - Standard single colors ,200mm L x 100mm H,Gloss ,,1,fixed,,R40.00,,,,,,yes
 256,VB-0256,Vehicle Branding ,Vinyl Stickers,,,Vinyl cut stickers - Standard single colors ,300mm L x 100mm H,Gloss ,,1,fixed,,R50.00,,,,,,yes
 257,VB-0257,Vehicle Branding ,Vinyl Stickers,,,Vinyl cut stickers - Standard single colors ,400mm L x 100mm H,Gloss ,,1,fixed,,R60.00,,,,,,yes
@@ -293,7 +293,7 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 292,VB-0292,Vehicle Branding ,Number Plates,,,Perspex Number Plate - Bike custom Sizes ,Free Size ,Gloss ,,1,fixed,,R150.00,,,,,,yes
 293,VB-0293,Vehicle Branding ,Number Plates,,,ABS Number Plates standard - Fancy Plates ,520 x 113mm ,Gloss ,,1,fixed,,R80.00,,,,,,yes
 294,VB-0294,Vehicle Branding ,Number Plates,,,ABS Number Plates standard - Fancy Plates ,440 x 113mm,Gloss ,,1,fixed,,R80.00,,,,,,yes
-295,VB-0295,Vehicle Branding ,Vehicle Graphics,,,Digital Print - custom design ,Free Size ,Gloss ,,1,,550,,,,,,,yes
+295,VB-0295,Vehicle Branding ,Vehicle Graphics,,,Digital Print - custom design ,Free Size ,Gloss ,,1,sqm,550,,,,,,,yes
 296,VB-0296,Vehicle Branding ,Vehicle Graphics,,,Basic Design single color Graphics - Text only ,Car / Small bakkie / Double cab ,Gloss ,,1,fixed,,R950.00,,,,,,yes
 297,VB-0297,Vehicle Branding ,Vehicle Graphics,,,Basic Design 2 color Graphics - Text only ,Car / Small bakkie / Double cab ,Gloss ,,1,fixed,,"R1,350.00",,,,,,yes
 298,VB-0298,Vehicle Branding ,Vehicle Graphics,,,Basic Design 2 color with Logo color Graphics - Text only ,Car / Small bakkie / Double cab ,Gloss ,,1,fixed,,"R2,750.00",,,,,,yes
@@ -303,5 +303,5 @@ ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,Si
 302,LC-0302,Laser Cutting ,Cake Toppers,,,Cake toppers - Mirror single color ,A5,Gloss ,,1,fixed,,R150.00,,,,,,yes
 303,LC-0303,Laser Cutting ,Cake Toppers,,,Cake toppers - Mirror 2 color ,A5,Gloss ,,1,fixed,,R180.00,,,,,,yes
 304,LC-0304,Laser Cutting ,Cake Toppers,,,Cake toppers - Full color with image ,A5,Gloss ,,1,fixed,,R180.00,,,,,,yes
-305,LC-0305,Laser Cutting ,MDF Cutting,,,3mm MDF wood cutting ,Custom,Standard,,1,,400,,,,,,,yes
-306,LC-0306,Laser Cutting ,MDF Cutting,,,3mm MDF wood cutting & Engraving ,Custom,Standard,,1,,1200,,,,,,,yes
+305,LC-0305,Laser Cutting ,MDF Cutting,,,3mm MDF wood cutting ,Custom,Standard,,1,sqm,400,,,,,,,yes
+306,LC-0306,Laser Cutting ,MDF Cutting,,,3mm MDF wood cutting & Engraving ,Custom,Standard,,1,sqm,1200,,,,,,,yes

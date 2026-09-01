@@ -248,6 +248,7 @@ OpenAI live response check:
 - The dashboard top bar includes a **Test OpenAI** button to verify live OpenAI connectivity and response health.
 - OpenAI prompt now receives richer product lines from `products.csv` (id, sku, category, options, price type, and price values) to improve pricing relevance.
 - For pricing intents, the bot is constrained to catalog-driven CSV quoting and will ask clarifying questions or suggest closest catalog sizes instead of inventing prices.
+- OpenAI now keeps conversation focus on the client’s current product family (for example signage) unless the client explicitly asks to switch products.
 
 `POST /api/ai/upload-backup` accepts multipart fields:
 - `backup` (file, required)
@@ -316,6 +317,7 @@ Notes:
 - The bot now supports the `garethrn-patch-1` style product CSV (fixed pricing and `sqm` pricing in the same file).
 - CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
 - Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`.
+- Keep `PriceType` accurate per row (`fixed` or `sqm`) so OpenAI and quote matching use the correct pricing method.
 - Customer quote flow:
   - Natural conversation is supported by default (human-like receptionist/sales style)
   - `menu` now acts as a conversational catalog request (not a command-driven prompt)

@@ -45,3 +45,11 @@ test('buildCsvPricingReply suggests closest catalog size when dimensions are not
     assert.ok(reply);
     assert.match(reply, /closest catalog size/i);
 });
+
+test('buildProductContextForAI keeps signage focus and avoids unrelated business cards', async () => {
+    await pricing.loadProducts();
+    const context = pricing.buildProductContextForAI('need quote for outdoor signage acm signs 1200x800');
+    assert.ok(context);
+    assert.match(context, /ACM Signs|Outdoor Signs/i);
+    assert.doesNotMatch(context, /Business Cards 300GSM/i);
+});

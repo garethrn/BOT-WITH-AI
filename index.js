@@ -603,6 +603,29 @@ function rankProductsForText(text = '') {
     })).sort((a, b) => b.score - a.score);
 }
 
+function inferCatalogFocusFromText(text = '') {
+    const ranked = rankProductsForText(text).filter((item) => item.score > 0);
+    if (!ranked.length) return null;
+    const top = ranked[0];
+    const topProduct = top.product || {};
+    return {
+        category: String(topProduct.Category || '').trim(),
+        subcategory: String(topProduct.Subcategory || '').trim(),
+        productName: String(topProduct.Name || '').trim()
+    };
+}
+
+function inferActiveCatalogFocus(jid, currentText = '') {
+    if (!jid) return inferCatalogFocusFromText(currentText);
+    const recentUserText = (chatLog.get(jid) || [])
+        .filter((entry) => entry?.role === 'user' && entry?.text)
+        .slice(-6)
+        .map((entry) => String(entry.text || '').trim())
+        .filter(Boolean);
+    const combined = [...recentUserText, String(currentText || '').trim()].filter(Boolean).join(' ');
+    return inferCatalogFocusFromText(combined);
+}
+
 function productSearchBlob(product) {
     return normalizeTextForMatch([
         product.Name,
@@ -616,8 +639,9 @@ function productSearchBlob(product) {
     ].join(' '));
 }
 
-function buildProductContextForAI(userText = '') {
+function buildProductContextForAI(userText = '', jid = '') {
     const request = parseProductRequestDetails(userText);
+    const activeFocus = inferActiveCatalogFocus(jid, userText);
     const tokenSet = new Set(request.tokens);
     if (request.sizeToken) tokenSet.add(request.sizeToken);
     if (request.finish) tokenSet.add(request.finish);
@@ -641,7 +665,16 @@ function buildProductContextForAI(userText = '') {
         merged.push(product);
         if (merged.length >= 24) break;
     }
-    const fallback = merged.length ? merged : products.slice(0, 24);
+    const focusMatched = activeFocus
+        ? merged.filter((product) => {
+            const category = String(product.Category || '').trim().toLowerCase();
+            const subcategory = String(product.Subcategory || '').trim().toLowerCase();
+            const focusCategory = String(activeFocus.category || '').trim().toLowerCase();
+            const focusSubcategory = String(activeFocus.subcategory || '').trim().toLowerCase();
+            return (focusCategory && category === focusCategory) || (focusSubcategory && subcategory === focusSubcategory);
+        })
+        : [];
+    const fallback = focusMatched.length ? focusMatched : (merged.length ? merged : products.slice(0, 24));
     if (!fallback.length) return 'No product catalog loaded.';
     return fallback.map((product) => {
         const name = product.Name || product.Subcategory || product.Category || 'Product';
@@ -783,7 +816,7 @@ function selectProductsByQuantityTier(productsToFilter, requestedQty) {
     });
 }
 
-function buildCsvPricingReply(text = '') {
+function buildCsvPricingReply(text = '', jid = '') {
     const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label|flyer|poster|invoice)\b/i.test(text);
     if (!pricingIntent) return null;
 
@@ -798,7 +831,18 @@ function buildCsvPricingReply(text = '') {
         ].filter(Boolean).join('\n\n');
     }
     const topScore = ranked[0].score;
-    const candidatePool = ranked.filter((item) => item.score >= Math.max(1, topScore - 3)).map((item) => item.product);
+    let candidatePool = ranked.filter((item) => item.score >= Math.max(1, topScore - 3)).map((item) => item.product);
+    const activeFocus = inferActiveCatalogFocus(jid, text);
+    if (activeFocus) {
+        const focusMatchedPool = candidatePool.filter((product) => {
+            const category = String(product.Category || '').trim().toLowerCase();
+            const subcategory = String(product.Subcategory || '').trim().toLowerCase();
+            const focusCategory = String(activeFocus.category || '').trim().toLowerCase();
+            const focusSubcategory = String(activeFocus.subcategory || '').trim().toLowerCase();
+            return (focusCategory && category === focusCategory) || (focusSubcategory && subcategory === focusSubcategory);
+        });
+        if (focusMatchedPool.length > 0) candidatePool = focusMatchedPool;
+    }
 
     const sideOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.SingleOrDoubleSided)).filter(Boolean))];
     if (!request.side && sideOptions.length > 1) {
@@ -875,9 +919,9 @@ function buildCsvPricingReply(text = '') {
     return buildQuoteForMatchedProduct(best.product, request, { closestSizeNote });
 }
 
-function buildConversationalFallback(userText = '') {
+function buildConversationalFallback(userText = '', jid = '') {
     const prompt = String(userText || '').toLowerCase();
-    const shortlist = buildProductContextForAI(userText)
+    const shortlist = buildProductContextForAI(userText, jid)
         .split('\n')
         .slice(0, 3)
         .join('\n');
@@ -932,7 +976,11 @@ async function generateOpenAIReply(userText, jid = '') {
     if (!trimmed) return null;
 
     try {
-        const productContext = buildProductContextForAI(trimmed);
+        const productContext = buildProductContextForAI(trimmed, jid);
+        const activeFocus = inferActiveCatalogFocus(jid, trimmed);
+        const focusInstruction = activeFocus
+            ? `Current customer product focus: ${activeFocus.subcategory || activeFocus.category || activeFocus.productName}. Stay on this product family unless the customer explicitly asks to switch products.`
+            : 'Keep product suggestions tightly aligned to the customer’s current product request.';
         const conversationContext = buildConversationContextForAI(jid, trimmed);
         const completion = await openaiClient.chat.completions.create({
             model: OPENAI_MODEL,
@@ -952,6 +1000,7 @@ async function generateOpenAIReply(userText, jid = '') {
                         'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
                         'Answer the customer’s latest message directly and do not give unrelated generic replies.',
                         'Never invent pricing. Use only provided catalog context for prices, otherwise ask a clarifying question.',
+                        focusInstruction,
                         `Catalog context:\n${productContext}`
                     ].join('\n\n')
                 },
@@ -1194,7 +1243,7 @@ async function startBot(fingerprintIndex = 0) {
                             await sendTrackedMessage(jid, aiGreeting);
                             rememberConversationReply(greetInput, aiGreeting);
                         } else {
-                            const fallbackReply = buildConversationalFallback(greetInput);
+                            const fallbackReply = buildConversationalFallback(greetInput, jid);
                             await sendTrackedMessage(jid, fallbackReply);
                             rememberConversationReply(greetInput, fallbackReply);
                         }
@@ -1323,7 +1372,7 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
-                        const csvPricingReply = buildCsvPricingReply(text);
+                        const csvPricingReply = buildCsvPricingReply(text, jid);
                         if (csvPricingReply) {
                             await sendTrackedMessage(jid, csvPricingReply);
                             rememberConversationReply(text, csvPricingReply);
@@ -1349,7 +1398,7 @@ async function startBot(fingerprintIndex = 0) {
                                 continue;
                             }
                             pushLearningLead(jid, text);
-                            const fallbackReply = buildConversationalFallback(text);
+                            const fallbackReply = buildConversationalFallback(text, jid);
                             await sendTrackedMessage(jid, fallbackReply);
                             rememberConversationReply(text, fallbackReply);
                         }
