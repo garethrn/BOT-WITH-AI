@@ -26,6 +26,7 @@ const {
     buildOpenAISystemPrompt,
     rememberConversationReply
 } = require('./lib/ai-learning');
+const { handleQuoteConversationMessage } = require('./lib/quote-state-machine');
 
 const BROWSER_FINGERPRINTS = [
     ['Mac OS', 'Chrome', '1.0.0'],
@@ -73,6 +74,7 @@ let isBotPaused = false;
 const pausedChats = new Set();
 const chatLog = new Map();
 const chatLastActivity = new Map();
+const quoteConversationState = new Map();
 const MAX_CHAT_MESSAGES = 500;
 let learningLeads = [];
 let orders = [];
@@ -1313,6 +1315,7 @@ async function startBot(fingerprintIndex = 0) {
                             rememberConversationReply(greetInput, fallbackReply);
                         }
                     } else if (normalizedText.startsWith('products ')) {
+                        quoteConversationState.delete(jid);
                         const keyword = normalizedText.replace(/^products\s+/, '').trim();
                         const matches = products.filter((product) =>
                             [product.ID, product.Name, product.Category, product.Subcategory, product.Aliases]
@@ -1326,6 +1329,7 @@ async function startBot(fingerprintIndex = 0) {
                         const result = matches.slice(0, 25).map((p, index) => buildProductLine(p, index)).join('\n');
                         await sendTrackedMessage(jid, `*Matches for "${keyword}"*\n\n${result}${matches.length > 25 ? `\n\n...and ${matches.length - 25} more.` : ''}`);
                     } else if (normalizedText === 'cart') {
+                        quoteConversationState.delete(jid);
                         const cart = userCarts[jid];
                         if (!cart || cart.length === 0) {
                             await sendTrackedMessage(jid, '🛒 Your cart is empty.');
@@ -1341,6 +1345,7 @@ async function startBot(fingerprintIndex = 0) {
                         });
                         await sendTrackedMessage(jid, `*🛒 Cart*\n\n${lines.join('\n')}\n\n*Total:* ${formatCurrency(total)}\nType *checkout* to confirm.`);
                     } else if (normalizedText.startsWith('buy ')) {
+                        quoteConversationState.delete(jid);
                         const parts = text.trim().split(/\s+/);
                         const id = parts[1];
                         const qty = parseInt(parts[2], 10);
@@ -1406,6 +1411,7 @@ async function startBot(fingerprintIndex = 0) {
                         ].filter(Boolean);
                         await sendTrackedMessage(jid, quoteLines.join('\n'));
                     } else if (normalizedText === 'checkout') {
+                        quoteConversationState.delete(jid);
                         const cart = userCarts[jid];
                         if (!cart || cart.length === 0) {
                             await sendTrackedMessage(jid, 'Cart empty.');
@@ -1427,6 +1433,7 @@ async function startBot(fingerprintIndex = 0) {
                         summary += `*Grand Total: ${formatCurrency(total)}*\n\nReply with *confirm* to submit your order.`;
                         await sendTrackedMessage(jid, summary);
                     } else if (normalizedText === 'confirm') {
+                        quoteConversationState.delete(jid);
                         const cart = userCarts[jid];
                         if (!cart || cart.length === 0) {
                             await sendTrackedMessage(jid, 'You don’t have a pending quote yet. Tell me what product you need and I’ll prepare pricing for you.');
@@ -1437,9 +1444,14 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
-                        const csvPricingReply = buildCsvPricingReply(text, jid);
-                        if (csvPricingReply) {
-                            await sendTrackedMessage(jid, csvPricingReply);
+                        const quoteFlow = handleQuoteConversationMessage({
+                            jid,
+                            text,
+                            products,
+                            stateStore: quoteConversationState
+                        });
+                        if (quoteFlow.handled && quoteFlow.reply) {
+                            await sendTrackedMessage(jid, quoteFlow.reply);
                             continue;
                         }
 

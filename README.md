@@ -315,6 +315,10 @@ Notes:
 ## Product CSV pricing behavior
 
 - The bot now supports the `garethrn-patch-1` style product CSV (fixed pricing and `sqm` pricing in the same file).
+- Quoting now runs through deterministic services:
+  - `lib/product-lookup.js` for normalized CSV matching
+  - `lib/quote-calculator.js` for all pricing and fee math
+  - `lib/quote-state-machine.js` for ordered follow-up questions and loop prevention
 - CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
 - Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`, `Aliases`, `MinOrderQty`, `UnitPricing`.
 - Keep `PriceType` accurate per row (`fixed` or `sqm`) so OpenAI and quote matching use the correct pricing method.
