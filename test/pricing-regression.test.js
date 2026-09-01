@@ -56,7 +56,7 @@ test('buildProductContextForAI keeps signage focus and avoids unrelated business
 
 test('buildCsvPricingReply enforces minimum order quantity for per-unit rows', async () => {
     await pricing.loadProducts();
-    const reply = pricing.buildCsvPricingReply('please quote 20 bookmarks laminated single sided');
+    const reply = pricing.buildCsvPricingReply('please quote 20 bookmarks laminated single sided 190x60');
     assert.ok(reply);
     assert.match(reply, /minimum order is 50/i);
 });

@@ -214,7 +214,7 @@ function getFixedPricingRule(product = {}) {
     const rawUnits = String(product.UnitsPerProduct || '').trim();
     const parsedUnits = parseUnitsPerProduct(rawUnits);
     const explicitMinQty = toNumber(product.MinOrderQty, 0);
-    const hasGreaterThanRule = /^[>\s]*=?\s*\d+/.test(rawUnits) || rawUnits.includes('>');
+    const hasGreaterThanRule = /^(?:>=|>)\s*\d+/.test(rawUnits);
     const unitPricingHint = /\bunit\b/i.test(String(product.UnitPricing || ''));
     const pricingMode = hasGreaterThanRule || unitPricingHint ? 'unit' : 'pack';
     const minQty = pricingMode === 'unit'
