@@ -44,6 +44,10 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL_FALLBACKS = String(process.env.OPENAI_MODEL_FALLBACKS || 'gpt-4.1-mini,gpt-4.1-nano')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 const IS_TEST_MODE = process.env.BOT_TEST_MODE === '1';
 
 const STORAGE_DIR = path.join(__dirname, 'storage');
@@ -73,6 +77,7 @@ let retryCount = 0;
 const MAX_RETRIES = 10;
 let botConnectionState = 'starting';
 const openaiClient = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+let activeOpenAIModel = OPENAI_MODEL;
 let botSocket = null;
 let isBotPaused = false;
 const pausedChats = new Set();
@@ -937,57 +942,84 @@ async function sendTrackedMessage(jid, text, role = 'bot') {
     logChatMessage(jid, role, text);
 }
 
+function trimTextForOpenAI(value, maxLength = 4000) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function getOpenAIModelCandidates() {
+    return [...new Set([activeOpenAIModel, OPENAI_MODEL, ...OPENAI_MODEL_FALLBACKS].filter(Boolean))];
+}
+
 async function generateOpenAIReply(userText, jid = '') {
     if (!openaiClient) return null;
     const trimmed = String(userText || '').trim();
     if (!trimmed) return null;
 
     try {
-        const productContext = buildProductContextForAI(trimmed, jid);
+        const productContext = trimTextForOpenAI(buildProductContextForAI(trimmed, jid), 3200);
         const activeFocus = inferActiveCatalogFocus(jid, trimmed);
         const focusInstruction = activeFocus
             ? `Current customer product focus: ${activeFocus.subcategory || activeFocus.category || activeFocus.productName}. Stay on this product family unless the customer explicitly asks to switch products.`
             : 'Keep product suggestions tightly aligned to the customer’s current product request.';
-        const conversationContext = buildConversationContextForAI(jid, trimmed);
+        const conversationContext = buildConversationContextForAI(jid, trimmed).map((entry) => ({
+            role: entry.role === 'user' ? 'user' : 'assistant',
+            content: trimTextForOpenAI(entry.content, 500)
+        }));
         const previousAssistantReply = conversationContext
             .slice()
             .reverse()
             .find((item) => item.role === 'assistant')?.content || '';
-        const completion = await openaiClient.chat.completions.create({
-            model: OPENAI_MODEL,
-            messages: [
-                {
-                    role: 'system',
-                    content: [
-                        buildOpenAISystemPrompt(),
-                        'You are a human-like WhatsApp receptionist and sales consultant.',
-                        'Do not tell the customer to "type menu" or use command-style instructions unless specifically asked.',
-                        'Use the product catalog below only for product context and naming consistency.',
-                        'Do not calculate, estimate, or infer pricing in this step; pricing is handled by deterministic quote services.',
-                        'Find likely products for the customer proactively based on their message.',
-                        'When relevant, recommend up to 3 best-fit products by name without giving a calculated price.',
-                        'Do not ask the customer to choose by product ID.',
-                        'Keep the conversation going naturally with one helpful follow-up question.',
-                        'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
-                        'Answer the customer’s latest message directly and do not give unrelated generic replies.',
-                        'Do not repeat the exact same response used in the previous assistant message.',
-                        previousAssistantReply ? `Previous assistant message to avoid repeating:\n${previousAssistantReply}` : '',
-                        'Never invent pricing or product options.',
-                        focusInstruction,
-                        `Catalog context:\n${productContext}`
-                    ].join('\n\n')
-                },
-                ...conversationContext,
-                { role: 'user', content: trimmed.slice(0, 1000) }
-            ],
-            max_tokens: 360,
-            temperature: 0.2
-        });
+        const baseMessages = [
+            {
+                role: 'system',
+                content: trimTextForOpenAI([
+                    buildOpenAISystemPrompt(),
+                    'You are a human-like WhatsApp receptionist and sales consultant.',
+                    'Do not tell the customer to "type menu" or use command-style instructions unless specifically asked.',
+                    'Use the product catalog below only for product context and naming consistency.',
+                    'Do not calculate, estimate, or infer pricing in this step; pricing is handled by deterministic quote services.',
+                    'Find likely products for the customer proactively based on their message.',
+                    'When relevant, recommend up to 3 best-fit products by name without giving a calculated price.',
+                    'Do not ask the customer to choose by product ID.',
+                    'Keep the conversation going naturally with one helpful follow-up question.',
+                    'If details are missing, ask only the most important next question (quantity, size, finish, or deadline).',
+                    'Answer the customer’s latest message directly and do not give unrelated generic replies.',
+                    'Do not repeat the exact same response used in the previous assistant message.',
+                    previousAssistantReply ? `Previous assistant message to avoid repeating:\n${previousAssistantReply}` : '',
+                    'Never invent pricing or product options.',
+                    focusInstruction,
+                    `Catalog context:\n${productContext}`
+                ].join('\n\n'), 5200)
+            },
+            ...conversationContext,
+            { role: 'user', content: trimTextForOpenAI(trimmed, 700) }
+        ];
 
-        const reply = completion.choices?.[0]?.message?.content
-            ? String(completion.choices[0].message.content).trim()
-            : '';
-        return reply || null;
+        let lastError = '';
+        for (const model of getOpenAIModelCandidates()) {
+            try {
+                const completion = await openaiClient.chat.completions.create({
+                    model,
+                    messages: baseMessages,
+                    max_tokens: 360,
+                    temperature: 0.2
+                });
+                const reply = completion.choices?.[0]?.message?.content
+                    ? String(completion.choices[0].message.content).trim()
+                    : '';
+                if (reply) {
+                    activeOpenAIModel = model;
+                    return reply;
+                }
+            } catch (error) {
+                lastError = error?.message || String(error);
+            }
+        }
+        console.error('❌ OpenAI response failed:', lastError || 'No response returned from configured models.');
+        return null;
     } catch (error) {
         console.error('❌ OpenAI response failed:', error?.message || error);
         return null;
@@ -1005,34 +1037,39 @@ async function runOpenAIConnectivityCheck() {
     }
 
     const started = Date.now();
-    try {
-        const completion = await openaiClient.chat.completions.create({
-            model: OPENAI_MODEL,
-            messages: [
-                { role: 'system', content: 'Reply with exactly: OPENAI_OK' },
-                { role: 'user', content: 'Health check' }
-            ],
-            max_tokens: 12,
-            temperature: 0
-        });
-        const reply = String(completion.choices?.[0]?.message?.content || '').trim();
-        const responding = reply.includes('OPENAI_OK');
-        return {
-            enabled: true,
-            responding,
-            model: OPENAI_MODEL,
-            latencyMs: Date.now() - started,
-            reply
-        };
-    } catch (error) {
-        return {
-            enabled: true,
-            responding: false,
-            model: OPENAI_MODEL,
-            latencyMs: Date.now() - started,
-            error: error?.message || 'OpenAI request failed.'
-        };
+    let lastError = '';
+    for (const model of getOpenAIModelCandidates()) {
+        try {
+            const completion = await openaiClient.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: 'Reply with exactly: OPENAI_OK' },
+                    { role: 'user', content: 'Health check' }
+                ],
+                max_tokens: 12,
+                temperature: 0
+            });
+            const reply = String(completion.choices?.[0]?.message?.content || '').trim();
+            const responding = reply.includes('OPENAI_OK');
+            if (responding) activeOpenAIModel = model;
+            return {
+                enabled: true,
+                responding,
+                model,
+                latencyMs: Date.now() - started,
+                reply
+            };
+        } catch (error) {
+            lastError = error?.message || String(error);
+        }
     }
+    return {
+        enabled: true,
+        responding: false,
+        model: activeOpenAIModel || OPENAI_MODEL,
+        latencyMs: Date.now() - started,
+        error: lastError || 'OpenAI request failed.'
+    };
 }
 
 async function generateAICoachReply(userMessage, history = []) {
@@ -1346,6 +1383,7 @@ async function startBot(fingerprintIndex = 0) {
                         if (strictLearnedReply && (strictLearnedReply.source === 'responseRules' || strictLearnedReply.score >= 700)) {
                             quoteConversationState.delete(jid);
                             await sendTrackedMessage(jid, strictLearnedReply.reply);
+                            rememberConversationReply(text, strictLearnedReply.reply);
                             continue;
                         }
 
@@ -1368,11 +1406,13 @@ async function startBot(fingerprintIndex = 0) {
                             const learnedReply = generateLearnedReply(normalizedText, { minScore: 1 });
                             if (learnedReply) {
                                 await sendTrackedMessage(jid, learnedReply);
+                                rememberConversationReply(text, learnedReply);
                                 continue;
                             }
                             pushLearningLead(jid, text);
                             const fallbackReply = buildConversationalFallback(text, jid);
                             await sendTrackedMessage(jid, fallbackReply);
+                            rememberConversationReply(text, fallbackReply);
                         }
                     }
                 } catch (err) {

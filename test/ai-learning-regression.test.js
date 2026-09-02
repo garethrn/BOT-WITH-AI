@@ -130,3 +130,17 @@ test('teachBehavior extracts when|reply instruction format for immediate rule us
         cleanup(filePath);
     }
 });
+
+test('buildOpenAISystemPrompt truncates oversized stored examples', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        const longWhen = `shipping ${'details '.repeat(120)}`;
+        const longReply = `We deliver nationwide. ${'Turnaround depends on print queue. '.repeat(120)}`;
+        learning.teachBehavior('Long prompt handling', [{ when: longWhen, reply: longReply }]);
+        const prompt = learning.buildOpenAISystemPrompt();
+        assert.ok(prompt.length < 9000);
+        assert.match(prompt, /\.\.\./);
+    } finally {
+        cleanup(filePath);
+    }
+});

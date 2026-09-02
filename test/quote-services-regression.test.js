@@ -182,3 +182,23 @@ test('plain numeric quantity reply is accepted without repeating question', () =
     assert.match(reply.reply, /quote ready|total/i);
     assert.doesNotMatch(reply.reply, /what quantity should i quote/i);
 });
+
+test('active quote session allows non-quote conversation to fall through for AI assistance', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'interrupt@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+
+    const reply = handleQuoteConversationMessage({
+        jid: 'interrupt@s.whatsapp.net',
+        text: 'what are your opening hours',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, false);
+    assert.equal(reply.reply, null);
+    assert.notEqual(stateStore.get('interrupt@s.whatsapp.net').step, STATES.AWAITING_PRODUCT);
+});
