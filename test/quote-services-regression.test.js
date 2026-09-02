@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { matchProducts, filterRows, normalizeSidedOption } = require('../lib/product-lookup');
 const { calculateQuote, selectBestFixedRow } = require('../lib/quote-calculator');
-const { handleQuoteConversationMessage, STATES, createState } = require('../lib/quote-state-machine');
+const { handleQuoteConversationMessage, STATES, createState, isGreetingMessage, buildFreshQuoteStartMessage } = require('../lib/quote-state-machine');
 
 const sampleProducts = [
     {
@@ -111,4 +111,43 @@ test('product lookup returns matching rows by normalized product name', () => {
     assert.equal(result.rows.length > 0, true);
     assert.equal(result.rows[0].Name.includes('Business Cards'), true);
     assert.equal(createState().step, STATES.AWAITING_PRODUCT);
+});
+
+test('greeting helpers start fresh and include quantity options', () => {
+    assert.equal(isGreetingMessage('hello'), true);
+    assert.equal(isGreetingMessage('menu'), true);
+    const msg = buildFreshQuoteStartMessage(sampleProducts);
+    assert.match(msg, /start fresh/i);
+    assert.match(msg, /qty options: 500/i);
+});
+
+test('quantity prompt includes available fixed quantity options', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'qty@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+    handleQuoteConversationMessage({
+        jid: 'qty@s.whatsapp.net',
+        text: 'laminated double sided',
+        products: sampleProducts,
+        stateStore
+    });
+    handleQuoteConversationMessage({
+        jid: 'qty@s.whatsapp.net',
+        text: 'yes artwork ready',
+        products: sampleProducts,
+        stateStore
+    });
+    const reply = handleQuoteConversationMessage({
+        jid: 'qty@s.whatsapp.net',
+        text: 'please continue',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, true);
+    assert.match(reply.reply, /what quantity should i quote/i);
+    assert.match(reply.reply, /500/i);
 });

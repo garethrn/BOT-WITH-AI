@@ -18,6 +18,7 @@ const OpenAI = require('openai');
 const {
     importBackup,
     teachBehavior,
+    logAIActivity,
     getDashboardData,
     setMetaConnectionIntent,
     generateLearnedReply,
@@ -29,7 +30,7 @@ const {
     parseProductsCsvContent,
     validateProductCsvHeaders
 } = require('./lib/csv-loader');
-const { handleQuoteConversationMessage } = require('./lib/quote-state-machine');
+const { handleQuoteConversationMessage, isGreetingMessage, buildFreshQuoteStartMessage } = require('./lib/quote-state-machine');
 
 const BROWSER_FINGERPRINTS = [
     ['Mac OS', 'Chrome', '1.0.0'],
@@ -1206,19 +1207,11 @@ async function startBot(fingerprintIndex = 0) {
 
                     if (!text) continue;
 
-                    if (normalizedText === 'hello' || normalizedText === 'menu') {
-                        const greetInput = normalizedText === 'menu'
-                            ? 'Customer asked to view products and pricing.'
-                            : text;
-                        const aiGreeting = await generateOpenAIReply(greetInput, jid);
-                        if (aiGreeting) {
-                            await sendTrackedMessage(jid, aiGreeting);
-                            rememberConversationReply(greetInput, aiGreeting);
-                        } else {
-                            const fallbackReply = buildConversationalFallback(greetInput, jid);
-                            await sendTrackedMessage(jid, fallbackReply);
-                            rememberConversationReply(greetInput, fallbackReply);
-                        }
+                    if (isGreetingMessage(normalizedText)) {
+                        quoteConversationState.delete(jid);
+                        const freshStart = buildFreshQuoteStartMessage(products);
+                        await sendTrackedMessage(jid, freshStart);
+                        rememberConversationReply('customer greeting restart quote', freshStart);
                     } else if (normalizedText.startsWith('products ')) {
                         quoteConversationState.delete(jid);
                         const keyword = normalizedText.replace(/^products\s+/, '').trim();
@@ -1699,12 +1692,13 @@ app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (re
 app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
     const instruction = String(req.body?.instruction || '').trim();
     const examples = Array.isArray(req.body?.examples) ? req.body.examples : [];
+    const source = String(req.body?.source || 'manual').trim() || 'manual';
 
     if (!instruction) {
         return res.status(400).json({ error: 'Instruction is required.' });
     }
 
-    const result = teachBehavior(instruction, examples);
+    const result = teachBehavior(instruction, examples, { source });
     res.json({
         message: 'Teaching instructions saved.',
         ...result
@@ -1721,6 +1715,11 @@ app.post('/api/ai/coach', writeRateLimiter, async (req, res) => {
 
     try {
         const reply = await generateAICoachReply(message, history);
+        logAIActivity('coach_interaction', {
+            promptLength: message.length,
+            historyCount: history.length,
+            replyLength: String(reply || '').length
+        });
         return res.json({
             message: 'AI coach response generated.',
             reply

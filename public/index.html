@@ -212,6 +212,7 @@
           <div class="mini">Backups: <strong id="backupCount">0</strong></div>
           <div class="mini">Teachings: <strong id="teachingCount">0</strong></div>
           <div class="mini">Rules: <strong id="ruleCount">0</strong></div>
+          <div class="mini">AI activity: <strong id="activityCount">0</strong></div>
           <div class="mini">Meta saved: <strong id="metaSaved">No</strong></div>
           <pre id="summaryPreview">[]</pre>
         </div>
@@ -452,14 +453,17 @@
       const backups = Array.isArray(learned.backups) ? learned.backups : [];
       const teaching = Array.isArray(learned.teaching) ? learned.teaching : [];
       const rules = Array.isArray(learned.responseRules) ? learned.responseRules : [];
+      const aiActivity = Array.isArray(learned.aiActivity) ? learned.aiActivity : [];
       el('backupCount').textContent = String(backups.length);
       el('teachingCount').textContent = String(teaching.length);
       el('ruleCount').textContent = String(rules.length);
+      el('activityCount').textContent = String(aiActivity.length);
       el('metaSaved').textContent = learned.metaConnection?.enabled ? 'Yes' : 'No';
       el('summaryPreview').textContent = JSON.stringify({
         backups: backups.slice(-3),
         teaching: teaching.slice(-3).map((x) => ({ instruction: x.instruction, createdAt: x.createdAt })),
-        rules: rules.slice(0, 8)
+        rules: rules.slice(0, 8),
+        activity: aiActivity.slice(-8)
       }, null, 2);
     }
 
@@ -644,7 +648,7 @@
         const data = await getJson('/api/ai/teach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instruction: el('instruction').value.trim() })
+          body: JSON.stringify({ instruction: el('instruction').value.trim(), source: 'manual_dashboard' })
         });
         el('teachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
         await refreshDashboardState();
@@ -685,7 +689,7 @@
         const data = await getJson('/api/ai/teach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instruction: state.lastCoachReply })
+          body: JSON.stringify({ instruction: state.lastCoachReply, source: 'interactive_coach' })
         });
         el('coachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
         await refreshDashboardState();

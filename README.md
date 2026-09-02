@@ -322,6 +322,8 @@ Notes:
   - `lib/quote-state-machine.js` for ordered follow-up questions and loop prevention
 - OpenAI is no longer used for pricing calculation or pricing-rule decisions.
 - Use `/home/runner/work/BOT-WITH-AI/BOT-WITH-AI/products.template.csv` as the recommended catalog template with all supported headers and sample fixed/sqm/min-order rows.
+- Client greetings now reset quote state and start a fresh guided product flow with available product options and quantity choices.
+- AI learning summary now includes activity events for manual teachings and interactive coach actions.
 - CSV headers should include `ID`, product name/category fields, and at least one pricing field (`FixedPrice` or `PricePerSqm`/`Price`).
 - Optional pricing columns used in quoting: `MinPrice`, `DesignFee`, `PolePrice`, `InstallationFee`, `UnitsPerProduct`, `PriceType`, `Aliases`, `MinOrderQty`, `UnitPricing`.
 - Keep `PriceType` accurate per row (`fixed` or `sqm`) so OpenAI and quote matching use the correct pricing method.

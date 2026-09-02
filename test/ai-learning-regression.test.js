@@ -102,3 +102,20 @@ test('importBackup accepts crypt14-style binary uploads and extracts transcript 
         cleanup(filePath);
     }
 });
+
+test('manual and interactive teaching writes AI activity log entries', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.teachBehavior('Manual instruction', [], { source: 'manual_dashboard' });
+        learning.teachBehavior('Interactive coach instruction', [], { source: 'interactive_coach' });
+        learning.logAIActivity('coach_interaction', { promptLength: 25, replyLength: 100 });
+        const data = learning.getDashboardData();
+        assert.ok(Array.isArray(data.aiActivity));
+        assert.ok(data.aiActivity.length >= 3);
+        const activityTypes = data.aiActivity.map((item) => item.type);
+        assert.ok(activityTypes.includes('teaching_saved'));
+        assert.ok(activityTypes.includes('coach_interaction'));
+    } finally {
+        cleanup(filePath);
+    }
+});
