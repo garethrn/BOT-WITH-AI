@@ -119,3 +119,14 @@ test('manual and interactive teaching writes AI activity log entries', { concurr
         cleanup(filePath);
     }
 });
+
+test('teachBehavior extracts when|reply instruction format for immediate rule use', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.teachBehavior('when: delivery time | reply: Delivery takes 2-3 working days.');
+        const reply = learning.generateLearnedReply('delivery time');
+        assert.equal(reply, 'Delivery takes 2-3 working days.');
+    } finally {
+        cleanup(filePath);
+    }
+});

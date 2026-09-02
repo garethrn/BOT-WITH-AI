@@ -189,7 +189,9 @@
           <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
           <h3>Manual Teach AI Behavior</h3>
           <form id="teachForm">
-            <textarea id="instruction" rows="4" placeholder="How OpenAI should respond..." required></textarea>
+            <textarea id="instruction" rows="4" placeholder="How OpenAI should respond..."></textarea>
+            <input id="teachTrigger" type="text" placeholder="Optional: Trigger phrase (e.g. delivery time)">
+            <textarea id="teachReply" rows="2" placeholder="Optional: Reply for that trigger"></textarea>
             <button type="submit">Save Teaching</button>
           </form>
           <div id="teachResult" class="mini"></div>
@@ -645,12 +647,19 @@
     el('teachForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       try {
+        const instruction = el('instruction').value.trim();
+        const trigger = el('teachTrigger').value.trim();
+        const reply = el('teachReply').value.trim();
         const data = await getJson('/api/ai/teach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instruction: el('instruction').value.trim(), source: 'manual_dashboard' })
+          body: JSON.stringify({ instruction, trigger, reply, source: 'manual_dashboard' })
         });
         el('teachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
+        if (trigger && reply) {
+          el('teachTrigger').value = '';
+          el('teachReply').value = '';
+        }
         await refreshDashboardState();
       } catch (e) { el('teachResult').textContent = e.message; }
     });
@@ -686,10 +695,16 @@
         return;
       }
       try {
+        const lastUser = [...state.coachHistory].reverse().find((entry) => entry.role === 'user')?.content || '';
         const data = await getJson('/api/ai/teach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instruction: state.lastCoachReply, source: 'interactive_coach' })
+          body: JSON.stringify({
+            instruction: state.lastCoachReply,
+            trigger: lastUser,
+            reply: state.lastCoachReply,
+            source: 'interactive_coach'
+          })
         });
         el('coachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
         await refreshDashboardState();

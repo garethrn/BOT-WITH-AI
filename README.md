@@ -214,10 +214,12 @@ In Railway logs, confirm startup messages similar to:
 5. Submit upload to import rules into bot learning storage.
 
 ### 11) Teach response behavior
-1. In dashboard **Teach AI Behavior**, enter instruction text.
+1. In dashboard **Teach AI Behavior**, enter either:
+   - instruction text, and/or
+   - a trigger phrase + reply pair.
 2. Save teaching to persist behavior guidance.
-3. Rules added in teaching (including `when => reply` or `Q: ... | A: ...`) are applied immediately for strong matches before OpenAI generation.
-4. OpenAI uses this dashboard teaching plus imported backup rules as direction for generated replies.
+3. Rules added in teaching (including `when => reply`, `when: ... | reply: ...`, or `Q: ... | A: ...`) are applied immediately for strong matches before quote/state logic.
+4. OpenAI uses dashboard teaching plus imported backup rules only for non-deterministic conversational guidance.
 
 ### 12) Set up future Meta legal integration option
 1. In dashboard **Meta Legal Integration (Later)**, enter:
@@ -308,7 +310,7 @@ Notes:
 - `POST /api/admin/products/upload` – upload/replace products CSV file
 - `GET /api/admin/products/export` – download current products CSV file
 - `POST /api/ai/upload-backup` – upload backup file (`backup`) and optional `trainerName`
-- `POST /api/ai/teach` – save teaching instructions
+- `POST /api/ai/teach` – save teaching instructions and optional `trigger` + `reply` rule pair
 - `POST /api/ai/coach` – interactive AI planning response for admin client-reply strategy
 - `POST /api/meta/connect-later` – store future Meta connection intent
 

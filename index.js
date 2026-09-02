@@ -1342,6 +1342,13 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
+                        const strictLearnedReply = generateLearnedReply(text, { minScore: 450, includeMeta: true });
+                        if (strictLearnedReply && (strictLearnedReply.source === 'responseRules' || strictLearnedReply.score >= 700)) {
+                            quoteConversationState.delete(jid);
+                            await sendTrackedMessage(jid, strictLearnedReply.reply);
+                            continue;
+                        }
+
                         const quoteFlow = handleQuoteConversationMessage({
                             jid,
                             text,
@@ -1350,12 +1357,6 @@ async function startBot(fingerprintIndex = 0) {
                         });
                         if (quoteFlow.handled && quoteFlow.reply) {
                             await sendTrackedMessage(jid, quoteFlow.reply);
-                            continue;
-                        }
-
-                        const strictLearnedReply = generateLearnedReply(text, { minScore: 450, includeMeta: true });
-                        if (strictLearnedReply && (strictLearnedReply.source === 'responseRules' || strictLearnedReply.score >= 700)) {
-                            await sendTrackedMessage(jid, strictLearnedReply.reply);
                             continue;
                         }
 
@@ -1692,13 +1693,17 @@ app.post('/api/ai/upload-backup', writeRateLimiter, upload.single('backup'), (re
 app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
     const instruction = String(req.body?.instruction || '').trim();
     const examples = Array.isArray(req.body?.examples) ? req.body.examples : [];
+    const trigger = String(req.body?.trigger || '').trim();
+    const reply = String(req.body?.reply || '').trim();
     const source = String(req.body?.source || 'manual').trim() || 'manual';
+    const mergedExamples = [...examples];
+    if (trigger && reply) mergedExamples.push({ when: trigger, reply });
 
-    if (!instruction) {
-        return res.status(400).json({ error: 'Instruction is required.' });
+    if (!instruction && !mergedExamples.length) {
+        return res.status(400).json({ error: 'Instruction or trigger/reply is required.' });
     }
 
-    const result = teachBehavior(instruction, examples, { source });
+    const result = teachBehavior(instruction || `${trigger} => ${reply}`, mergedExamples, { source });
     res.json({
         message: 'Teaching instructions saved.',
         ...result
