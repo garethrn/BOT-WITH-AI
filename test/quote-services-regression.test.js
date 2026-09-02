@@ -151,3 +151,34 @@ test('quantity prompt includes available fixed quantity options', () => {
     assert.match(reply.reply, /what quantity should i quote/i);
     assert.match(reply.reply, /500/i);
 });
+
+test('plain numeric quantity reply is accepted without repeating question', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'plainqty@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+    handleQuoteConversationMessage({
+        jid: 'plainqty@s.whatsapp.net',
+        text: 'laminated double sided',
+        products: sampleProducts,
+        stateStore
+    });
+    handleQuoteConversationMessage({
+        jid: 'plainqty@s.whatsapp.net',
+        text: 'yes artwork ready',
+        products: sampleProducts,
+        stateStore
+    });
+    const reply = handleQuoteConversationMessage({
+        jid: 'plainqty@s.whatsapp.net',
+        text: '500',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, true);
+    assert.match(reply.reply, /quote ready|total/i);
+    assert.doesNotMatch(reply.reply, /what quantity should i quote/i);
+});
