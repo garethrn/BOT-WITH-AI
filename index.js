@@ -84,6 +84,7 @@ let isBotPaused = false;
 const pausedChats = new Set();
 const chatLog = new Map();
 const chatLastActivity = new Map();
+const conversationRouteMap = new Map();
 const quoteConversationState = new Map();
 const MAX_CHAT_MESSAGES = 500;
 let learningLeads = [];
@@ -354,6 +355,14 @@ function isIgnoredChatJid(jid) {
     );
 }
 
+function isRouteEligibleJid(jid) {
+    const value = String(jid || '').trim();
+    if (!value) return false;
+    if (isIgnoredChatJid(value)) return false;
+    if (!value.includes('@')) return false;
+    return true;
+}
+
 function resolveIncomingJid(key) {
     const primary = key?.remoteJid || '';
     const participant = key?.participant || '';
@@ -367,6 +376,23 @@ function resolveIncomingJid(key) {
     if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
     if (isDirectUserJid(normalizedParticipant)) return normalizedParticipant;
     return normalizeConversationJid(primary || participant || '');
+}
+
+function rememberConversationRoute(conversationJid, ...routeCandidates) {
+    const normalizedConversationJid = normalizeConversationJid(conversationJid);
+    if (!normalizedConversationJid) return;
+    for (const candidate of routeCandidates) {
+        const route = String(candidate || '').trim();
+        if (!isRouteEligibleJid(route)) continue;
+        conversationRouteMap.set(normalizedConversationJid, route);
+        return;
+    }
+}
+
+function resolveOutboundJid(conversationJid) {
+    const normalizedConversationJid = normalizeConversationJid(conversationJid);
+    if (!normalizedConversationJid) return '';
+    return conversationRouteMap.get(normalizedConversationJid) || normalizedConversationJid;
 }
 
 function extractIncomingMessageText(message) {
@@ -1037,8 +1063,25 @@ function buildGreetingReply(userText = '') {
 
 async function sendTrackedMessage(jid, text, role = 'bot') {
     if (!botSocket) throw new Error('WhatsApp socket not ready');
-    await botSocket.sendMessage(jid, { text });
-    logChatMessage(jid, role, text);
+    const conversationJid = normalizeConversationJid(jid);
+    const outboundJid = resolveOutboundJid(conversationJid);
+    let sent = false;
+    let lastError = null;
+    for (const candidate of [outboundJid, conversationJid]) {
+        const target = String(candidate || '').trim();
+        if (!target) continue;
+        if (sent && target === outboundJid) continue;
+        try {
+            await botSocket.sendMessage(target, { text });
+            sent = true;
+            rememberConversationRoute(conversationJid, target);
+            break;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    if (!sent && lastError) throw lastError;
+    logChatMessage(conversationJid || jid, role, text);
 }
 
 function trimTextForOpenAI(value, maxLength = 4000) {
@@ -1310,6 +1353,7 @@ async function startBot(fingerprintIndex = 0) {
 
                     const jid = resolveIncomingJid(msg.key);
                     if (!jid || isIgnoredChatJid(jid)) continue;
+                    rememberConversationRoute(jid, msg.key?.remoteJid, msg.key?.participant, jid);
 
                     const text = extractIncomingMessageText(msg.message);
                     const normalizedText = text.toLowerCase();
@@ -1939,6 +1983,8 @@ module.exports = {
     parseProductRequestDetails,
     phoneFromJid,
     resolveIncomingJid,
+    resolveOutboundJid,
+    rememberConversationRoute,
     getConversationSummaries,
     buildGreetingReply,
     buildProductContextForAI,

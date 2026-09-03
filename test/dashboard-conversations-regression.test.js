@@ -23,3 +23,9 @@ test('resolveIncomingJid uses participant phone when remote jid has no phone dig
     });
     assert.equal(resolved, '27718889999@s.whatsapp.net');
 });
+
+test('rememberConversationRoute keeps deliverable route and resolveOutboundJid uses it', () => {
+    const conversationJid = '27712223333@s.whatsapp.net';
+    app.rememberConversationRoute(conversationJid, '120363400000111111@lid', '27712223333@s.whatsapp.net');
+    assert.equal(app.resolveOutboundJid(conversationJid), '120363400000111111@lid');
+});
