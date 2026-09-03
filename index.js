@@ -253,17 +253,24 @@ function logChatMessage(jid, role, text) {
         existing.splice(0, existing.length - MAX_CHAT_MESSAGES);
     }
 
-    function logQuoteFlowDiagnostics(jid) {
-        const state = quoteConversationState.get(jid);
-        if (!state) return;
-        const lockedFamily = String(state.lockedFamilyLabel || state.lockedFamilyKey || '').trim();
-        const step = String(state.step || '').trim();
-        const candidateCount = Array.isArray(state.candidates) ? state.candidates.length : 0;
-        console.log(`🧭 QuoteFlow [${jid}] family="${lockedFamily}" step="${step}" candidates=${candidateCount}`);
-    }
-
     chatLog.set(cleanJid, existing);
     chatLastActivity.set(cleanJid, new Date().toISOString());
+}
+
+function logQuoteFlowDiagnostics(jid) {
+    const state = quoteConversationState.get(jid);
+    if (!state) return;
+    const lockedFamily = String(state.lockedFamilyLabel || state.lockedFamilyKey || '').trim();
+    const step = String(state.step || '').trim();
+    const candidateCount = Array.isArray(state.candidates) ? state.candidates.length : 0;
+    console.log(`🧭 QuoteFlow [${jid}] family="${lockedFamily}" step="${step}" candidates=${candidateCount}`);
+}
+
+function getPriorityTaughtReply(userText) {
+    const match = generateLearnedReply(userText, { minScore: 260, includeMeta: true });
+    if (!match) return null;
+    if (match.source !== 'responseRules') return null;
+    return match.reply;
 }
 
 function pushLearningLead(jid, text) {
@@ -1531,11 +1538,11 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
-                        const strictLearnedReply = generateLearnedReply(text, { minScore: 450, includeMeta: true });
-                        if (strictLearnedReply && (strictLearnedReply.source === 'responseRules' || strictLearnedReply.score >= 700)) {
+                        const strictLearnedReply = getPriorityTaughtReply(text);
+                        if (strictLearnedReply) {
                             quoteConversationState.delete(jid);
-                            await sendTrackedMessage(jid, strictLearnedReply.reply);
-                            rememberConversationReply(text, strictLearnedReply.reply);
+                            await sendTrackedMessage(jid, strictLearnedReply);
+                            rememberConversationReply(text, strictLearnedReply);
                             continue;
                         }
 
