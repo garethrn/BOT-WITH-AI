@@ -328,9 +328,9 @@ function normalizeConversationJid(rawJid) {
 function extractPhoneDigitsFromJid(jid) {
     const value = String(jid || '').trim();
     if (!value) return '';
-    const [localPart, domain = ''] = value.split('@');
-    if (domain !== 's.whatsapp.net' && domain !== 'c.us') return '';
-    return normalizeContactPhone(localPart.split(':')[0]);
+    const [localPart = ''] = value.split('@');
+    const digitsPart = localPart.split(':')[0];
+    return normalizeContactPhone(digitsPart);
 }
 
 function phoneFromJid(jid) {
@@ -343,9 +343,7 @@ function phoneFromJid(jid) {
 }
 
 function isDirectUserJid(jid) {
-    return typeof jid === 'string' && (
-        jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us')
-    );
+    return typeof jid === 'string' && jid.includes('@') && !isIgnoredChatJid(jid);
 }
 
 function isIgnoredChatJid(jid) {
@@ -360,8 +358,14 @@ function resolveIncomingJid(key) {
     const primary = key?.remoteJid || '';
     const participant = key?.participant || '';
     if (isIgnoredChatJid(primary)) return primary;
-    if (isDirectUserJid(primary)) return normalizeConversationJid(primary);
-    if (isDirectUserJid(participant)) return normalizeConversationJid(participant);
+    const normalizedPrimary = normalizeConversationJid(primary);
+    const normalizedParticipant = normalizeConversationJid(participant);
+    const primaryDigits = extractPhoneDigitsFromJid(normalizedPrimary);
+    const participantDigits = extractPhoneDigitsFromJid(normalizedParticipant);
+    if (primaryDigits) return `${primaryDigits}@s.whatsapp.net`;
+    if (participantDigits) return `${participantDigits}@s.whatsapp.net`;
+    if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
+    if (isDirectUserJid(normalizedParticipant)) return normalizedParticipant;
     return normalizeConversationJid(primary || participant || '');
 }
 
@@ -745,6 +749,19 @@ function findCatalogSuggestions(request, limit = 5) {
     return products.slice(0, limit);
 }
 
+function getQuantityOptionsFromProducts(candidates = [], limit = 6) {
+    const fixed = (Array.isArray(candidates) ? candidates : [])
+        .filter((item) => String(item.PriceType || '').toLowerCase() === 'fixed')
+        .map((item) => String(item.UnitsPerProduct || '').trim())
+        .filter(Boolean);
+    const numeric = [...new Set(fixed
+        .map((value) => parseInt((value.match(/\d+/) || [])[0], 10))
+        .filter((value) => Number.isFinite(value) && value > 0))]
+        .sort((a, b) => a - b)
+        .slice(0, limit);
+    return numeric;
+}
+
 function buildQuoteForMatchedProduct(product, request, options = {}) {
     if (!product) return null;
     const qty = request.quantity;
@@ -897,7 +914,9 @@ function buildCsvPricingReply(text = '', jid = '') {
     if (!request.quantity) {
         const sample = filtered[0];
         const name = sample?.Name || sample?.Subcategory || 'that product';
-        return `Thanks — for *${name}*, what quantity should I quote?`;
+        const qtyOptions = getQuantityOptionsFromProducts(filtered);
+        const optionsLine = qtyOptions.length ? ` Available options: ${qtyOptions.join(', ')}.` : '';
+        return `Thanks — for *${name}*, what quantity should I quote?${optionsLine}`;
     }
 
     const pricedCandidates = filtered.map((product) => {

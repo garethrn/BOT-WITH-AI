@@ -66,6 +66,8 @@ test('buildCsvPricingReply uses human phrasing when quantity is missing', async 
     const reply = pricing.buildCsvPricingReply('quote laminated double sided business cards');
     assert.ok(reply);
     assert.match(reply, /what quantity/i);
+    assert.match(reply, /available options:/i);
+    assert.match(reply, /500/i);
     assert.doesNotMatch(reply, /\bI found\b/i);
 });
 

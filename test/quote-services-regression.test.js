@@ -202,3 +202,22 @@ test('active quote session allows non-quote conversation to fall through for AI 
     assert.equal(reply.reply, null);
     assert.notEqual(stateStore.get('interrupt@s.whatsapp.net').step, STATES.AWAITING_PRODUCT);
 });
+
+test('active product flow does not fall through to unrelated chat before artwork step', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'focus@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+
+    const reply = handleQuoteConversationMessage({
+        jid: 'focus@s.whatsapp.net',
+        text: 'hello how are you',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, true);
+    assert.match(reply.reply, /finish\/material|single sided|print-ready artwork/i);
+});
