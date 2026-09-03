@@ -1126,6 +1126,13 @@ function trimTextForOpenAI(value, maxLength = 4000) {
     return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
+function withTimeout(promise, timeoutMs, timeoutMessage = 'Operation timed out') {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs))
+    ]);
+}
+
 function getOpenAIModelCandidates() {
     return [...new Set([activeOpenAIModel, OPENAI_MODEL, ...OPENAI_MODEL_FALLBACKS].filter(Boolean))];
 }
@@ -1369,7 +1376,7 @@ async function rewriteCorrectionWithOpenAI(question, correctedReply) {
     const cleanReply = String(correctedReply || '').trim();
     if (!openaiClient || !cleanQuestion || !cleanReply) return cleanReply;
     try {
-        const completion = await openaiClient.chat.completions.create({
+        const completion = await withTimeout(openaiClient.chat.completions.create({
             model: activeOpenAIModel || OPENAI_MODEL,
             messages: [
                 {
@@ -1383,10 +1390,11 @@ async function rewriteCorrectionWithOpenAI(question, correctedReply) {
             ],
             max_tokens: 220,
             temperature: 0.2
-        });
+        }), 8000, 'OpenAI rewrite timeout');
         const rewritten = String(completion.choices?.[0]?.message?.content || '').trim();
         return rewritten || cleanReply;
-    } catch {
+    } catch (error) {
+        console.warn('⚠️ New AI Learning rewrite fallback:', error?.message || error);
         return cleanReply;
     }
 }
@@ -2019,22 +2027,27 @@ app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
 });
 
 app.post('/api/ai/new-learning', writeRateLimiter, async (req, res) => {
-    const question = String(req.body?.question || req.body?.wrongQuestion || '').trim();
-    const correctedReply = String(req.body?.correctedReply || req.body?.reply || '').trim();
-    const improveWithOpenAI = Boolean(req.body?.improveWithOpenAI);
-    if (!question || !correctedReply) {
-        return res.status(400).json({ error: 'question and correctedReply are required.' });
+    try {
+        const question = String(req.body?.question || req.body?.wrongQuestion || '').trim();
+        const correctedReply = String(req.body?.correctedReply || req.body?.reply || '').trim();
+        const improveWithOpenAI = Boolean(req.body?.improveWithOpenAI);
+        if (!question || !correctedReply) {
+            return res.status(400).json({ error: 'question and correctedReply are required.' });
+        }
+        const finalReply = improveWithOpenAI
+            ? await rewriteCorrectionWithOpenAI(question, correctedReply)
+            : correctedReply;
+        const result = applyImmediateCorrection(question, finalReply, { source: 'new_ai_learning' });
+        const preview = generateLearnedReply(question, { minScore: 1, includeMeta: true });
+        return res.json({
+            message: 'New AI Learning rule saved and active immediately.',
+            ...result,
+            preview: preview?.reply || finalReply
+        });
+    } catch (error) {
+        console.error('❌ Failed to save new AI learning rule:', error?.message || error);
+        return res.status(500).json({ error: 'Failed to save new AI learning rule.' });
     }
-    const finalReply = improveWithOpenAI
-        ? await rewriteCorrectionWithOpenAI(question, correctedReply)
-        : correctedReply;
-    const result = applyImmediateCorrection(question, finalReply, { source: 'new_ai_learning' });
-    const preview = generateLearnedReply(question, { minScore: 1, includeMeta: true });
-    return res.json({
-        message: 'New AI Learning rule saved and active immediately.',
-        ...result,
-        preview: preview?.reply || finalReply
-    });
 });
 
 app.post('/api/ai/learn-from-chat', writeRateLimiter, (req, res) => {
