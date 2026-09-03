@@ -137,7 +137,8 @@ function getFixedPricingRule(product = {}) {
     const explicitMinQty = toNumber(product.MinOrderQty, 0);
     const hasGreaterThanRule = /^(?:>=|>)\s*\d+/.test(rawUnits);
     const unitPricingHint = /\bunit\b/i.test(String(product.UnitPricing || ''));
-    const pricingMode = hasGreaterThanRule || unitPricingHint ? 'unit' : 'pack';
+    const numericUnitPrice = toNumber(product.UnitPricing, 0) > 0;
+    const pricingMode = hasGreaterThanRule || unitPricingHint || numericUnitPrice ? 'unit' : 'pack';
     const minQty = pricingMode === 'unit'
         ? (explicitMinQty > 0 ? explicitMinQty : parsedUnits)
         : 0;
