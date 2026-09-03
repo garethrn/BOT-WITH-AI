@@ -234,3 +234,42 @@ test('active product flow does not fall through to unrelated chat before artwork
     assert.equal(reply.handled, true);
     assert.match(reply.reply, /finish\/material|single sided|print-ready artwork/i);
 });
+
+test('locked product family remains stable through follow-up questions', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'lock@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+    const reply = handleQuoteConversationMessage({
+        jid: 'lock@s.whatsapp.net',
+        text: 'tell me about banners',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, true);
+    const state = stateStore.get('lock@s.whatsapp.net');
+    assert.equal((state.lockedFamilyLabel || '').toLowerCase().includes('business cards'), true);
+    assert.equal(state.candidates.every((row) => String(row.Name || '').toLowerCase().includes('business cards')), true);
+});
+
+test('explicit switch intent changes locked product family', () => {
+    const stateStore = new Map();
+    handleQuoteConversationMessage({
+        jid: 'switch@s.whatsapp.net',
+        text: 'quote business cards',
+        products: sampleProducts,
+        stateStore
+    });
+    const reply = handleQuoteConversationMessage({
+        jid: 'switch@s.whatsapp.net',
+        text: 'switch to custom banner',
+        products: sampleProducts,
+        stateStore
+    });
+    assert.equal(reply.handled, true);
+    const state = stateStore.get('switch@s.whatsapp.net');
+    assert.equal((state.lockedFamilyLabel || '').toLowerCase().includes('custom banner'), true);
+});

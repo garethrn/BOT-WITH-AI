@@ -253,6 +253,15 @@ function logChatMessage(jid, role, text) {
         existing.splice(0, existing.length - MAX_CHAT_MESSAGES);
     }
 
+    function logQuoteFlowDiagnostics(jid) {
+        const state = quoteConversationState.get(jid);
+        if (!state) return;
+        const lockedFamily = String(state.lockedFamilyLabel || state.lockedFamilyKey || '').trim();
+        const step = String(state.step || '').trim();
+        const candidateCount = Array.isArray(state.candidates) ? state.candidates.length : 0;
+        console.log(`🧭 QuoteFlow [${jid}] family="${lockedFamily}" step="${step}" candidates=${candidateCount}`);
+    }
+
     chatLog.set(cleanJid, existing);
     chatLastActivity.set(cleanJid, new Date().toISOString());
 }
@@ -1536,6 +1545,7 @@ async function startBot(fingerprintIndex = 0) {
                             products,
                             stateStore: quoteConversationState
                         });
+                        logQuoteFlowDiagnostics(jid);
                         if (quoteFlow.handled && quoteFlow.reply) {
                             await sendTrackedMessage(jid, quoteFlow.reply);
                             continue;
