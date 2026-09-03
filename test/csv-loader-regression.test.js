@@ -17,6 +17,8 @@ test('normalizeProductRecord maps aliases and trims value whitespace', () => {
     const row = normalizeProductRecord({
         'Product Name': '  Business Cards 300GSM  ',
         'Sub Category': ' Business Cards ',
+        SubSubcategory: ' Premium ',
+        SubSubSubcategory: ' Gloss Range ',
         'Price': 'R775.00',
         'Price Type': 'FIXED',
         'Single Or Double Sided': ' Double Sided ',
@@ -24,6 +26,8 @@ test('normalizeProductRecord maps aliases and trims value whitespace', () => {
     });
     assert.equal(row.Name, 'Business Cards 300GSM');
     assert.equal(row.Subcategory, 'Business Cards');
+    assert.equal(row.SubSubcategory, 'Premium');
+    assert.equal(row.SubSubSubcategory, 'Gloss Range');
     assert.equal(row.PriceType, 'fixed');
     assert.equal(row.SingleOrDoubleSided, 'Double Sided');
 });
