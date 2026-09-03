@@ -195,6 +195,15 @@
             <button type="submit">Save Teaching</button>
           </form>
           <div id="teachResult" class="mini"></div>
+          <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+          <h3>Learn from Specific Chat</h3>
+          <div class="muted" style="margin-bottom:8px;">Select a conversation and let the AI learn user messages with the assistant replies from that chat.</div>
+          <form id="learnFromChatForm">
+            <select id="learnFromChatJid"></select>
+            <input id="learnFromChatPairs" type="number" min="5" max="200" value="80" placeholder="Max reply pairs">
+            <button type="submit">Learn Selected Chat</button>
+          </form>
+          <div id="learnFromChatResult" class="mini"></div>
         </div>
       </div>
 
@@ -401,6 +410,30 @@
         item.onclick = () => selectChat(chat.jid);
         list.appendChild(item);
       }
+
+      function renderLearnFromChatOptions() {
+        const select = el('learnFromChatJid');
+        if (!select) return;
+        const previous = select.value || state.activeJid;
+        const options = state.chats || [];
+        select.innerHTML = '';
+        if (!options.length) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No chats available';
+          select.appendChild(opt);
+          return;
+        }
+        for (const chat of options) {
+          const opt = document.createElement('option');
+          opt.value = chat.jid;
+          const label = chat.name ? `${chat.name} (${chat.phone || chat.jid})` : (chat.phone || chat.jid);
+          opt.textContent = label;
+          select.appendChild(opt);
+        }
+        const preferred = options.find((chat) => chat.jid === previous) || options.find((chat) => chat.jid === state.activeJid) || options[0];
+        select.value = preferred?.jid || '';
+      }
     }
 
     function renderMessages(messages) {
@@ -473,6 +506,7 @@
       const data = await getJson('/api/admin/chats');
       state.chats = data.conversations || [];
       renderChats();
+      renderLearnFromChatOptions();
       if (!state.activeJid && state.chats.length) state.activeJid = state.chats[0].jid;
     }
 
@@ -485,6 +519,7 @@
     async function selectChat(jid, rerenderList = true) {
       state.activeJid = jid;
       if (rerenderList) renderChats();
+      renderLearnFromChatOptions();
       const data = await getJson(`/api/admin/chats/${encodeURIComponent(jid)}`);
       const phone = data.phone || phoneFromJid(jid);
       const heading = data.name ? `${data.name} (${phone || jid})` : (phone || jid);
@@ -662,6 +697,27 @@
         }
         await refreshDashboardState();
       } catch (e) { el('teachResult').textContent = e.message; }
+    });
+
+    el('learnFromChatForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const jid = el('learnFromChatJid').value;
+      const maxPairs = Number(el('learnFromChatPairs').value || 80);
+      if (!jid) {
+        el('learnFromChatResult').textContent = 'Please choose a chat first.';
+        return;
+      }
+      try {
+        const data = await getJson('/api/ai/learn-from-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jid, maxPairs, source: 'manual_selected_chat' })
+        });
+        el('learnFromChatResult').textContent = `${data.message} Rules processed: ${data.importedRules}. Updated: ${data.updates}.`;
+        await refreshDashboardState();
+      } catch (e) {
+        el('learnFromChatResult').textContent = e.message;
+      }
     });
 
     el('coachForm').addEventListener('submit', async (event) => {

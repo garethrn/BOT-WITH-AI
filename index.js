@@ -23,7 +23,8 @@ const {
     setMetaConnectionIntent,
     generateLearnedReply,
     buildOpenAISystemPrompt,
-    rememberConversationReply
+    rememberConversationReply,
+    learnFromChatMessages
 } = require('./lib/ai-learning');
 const {
     parseProductsCsvStream,
@@ -1746,6 +1747,26 @@ app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
     const result = teachBehavior(instruction || `${trigger} => ${reply}`, mergedExamples, { source });
     res.json({
         message: 'Teaching instructions saved.',
+        ...result
+    });
+});
+
+app.post('/api/ai/learn-from-chat', writeRateLimiter, (req, res) => {
+    const jid = String(req.body?.jid || '').trim();
+    const source = String(req.body?.source || 'selected_chat').trim() || 'selected_chat';
+    const maxPairs = Math.min(200, Math.max(5, Number(req.body?.maxPairs || 80)));
+    if (!jid) return res.status(400).json({ error: 'jid is required.' });
+    const messages = chatLog.get(jid) || [];
+    if (messages.length < 2) {
+        return res.status(400).json({ error: 'Not enough chat messages to learn from this conversation.' });
+    }
+
+    const result = learnFromChatMessages(messages, { source, maxPairs });
+    res.json({
+        message: result.importedRules > 0
+            ? `Learning saved from ${jid}.`
+            : 'No usable user→assistant reply pairs were found in this chat.',
+        jid,
         ...result
     });
 });

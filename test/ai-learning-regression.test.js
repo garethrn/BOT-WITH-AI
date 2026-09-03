@@ -144,3 +144,22 @@ test('buildOpenAISystemPrompt truncates oversized stored examples', { concurrenc
         cleanup(filePath);
     }
 });
+
+test('learnFromChatMessages imports from selected chat and updates existing rules', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.teachBehavior('seed', [{ when: 'where are you based', reply: 'Old location reply.' }]);
+        const result = learning.learnFromChatMessages([
+            { role: 'user', text: 'Where are you based?' },
+            { role: 'bot', text: 'We are based in Johannesburg and deliver nationwide.' },
+            { role: 'user', text: 'How long is delivery?' },
+            { role: 'bot', text: 'Delivery is usually 2-3 working days.' }
+        ], { maxPairs: 10, source: 'test_selected_chat' });
+        assert.equal(result.importedRules, 2);
+        assert.equal(result.updates, 1);
+        assert.equal(learning.generateLearnedReply('where are you based'), 'We are based in Johannesburg and deliver nationwide.');
+        assert.equal(learning.generateLearnedReply('how long is delivery'), 'Delivery is usually 2-3 working days.');
+    } finally {
+        cleanup(filePath);
+    }
+});

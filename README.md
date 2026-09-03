@@ -221,6 +221,12 @@ In Railway logs, confirm startup messages similar to:
 3. Rules added in teaching (including `when => reply`, `when: ... | reply: ...`, or `Q: ... | A: ...`) are applied immediately for strong matches before quote/state logic.
 4. OpenAI uses dashboard teaching plus imported backup rules only for non-deterministic conversational guidance.
 
+### 11.1) Learn from a specific chat and update responses
+1. Open the AI tab and use **Learn from Specific Chat**.
+2. Pick the chat/JID you want to train from and choose max reply pairs.
+3. Submit to extract user → assistant reply pairs from that conversation.
+4. Existing matching triggers are updated (upsert), so better answers replace old ones.
+
 ### 12) Set up future Meta legal integration option
 1. In dashboard **Meta Legal Integration (Later)**, enter:
    - Meta Business Account ID
@@ -234,6 +240,7 @@ In Railway logs, confirm startup messages similar to:
 - `GET /api/dashboard/state` (include `x-admin-token` when token is enabled)
 - `POST /api/ai/upload-backup`
 - `POST /api/ai/teach`
+- `POST /api/ai/learn-from-chat`
 - `POST /api/meta/connect-later`
 
 Example quick checks:
