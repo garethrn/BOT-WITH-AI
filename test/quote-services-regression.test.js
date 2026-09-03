@@ -273,3 +273,46 @@ test('explicit switch intent changes locked product family', () => {
     const state = stateStore.get('switch@s.whatsapp.net');
     assert.equal((state.lockedFamilyLabel || '').toLowerCase().includes('custom banner'), true);
 });
+
+test('product lookup can match by deep category fields and units per product', () => {
+    const deepProducts = [
+        {
+            ID: 'D1',
+            Name: 'Outdoor Telescopic Banner',
+            Category: 'Signage',
+            Subcategory: 'Banners',
+            SubSubcategory: 'Outdoor',
+            SubSubSubcategory: 'Telescopic',
+            Size: 'Custom',
+            Finish: 'PVC',
+            SingleOrDoubleSided: 'Single Sided',
+            UnitsPerProduct: '1',
+            PriceType: 'sqm',
+            PricePerSqm: '200'
+        }
+    ];
+    const byDeepCategory = matchProducts(deepProducts, 'telescopic');
+    const byUnits = matchProducts(deepProducts, '1');
+    assert.equal(byDeepCategory.rows.length, 1);
+    assert.equal(byUnits.rows.length, 1);
+});
+
+test('quote state machine accepts extracted details to avoid repeat questions', () => {
+    const stateStore = new Map();
+    const reply = handleQuoteConversationMessage({
+        jid: 'extract@s.whatsapp.net',
+        text: 'quote please',
+        products: sampleProducts,
+        stateStore,
+        requestDetails: {
+            intent: 'request_quote',
+            product_query: 'business cards',
+            finish: 'laminated',
+            sided_option: 'double sided',
+            quantity: 500,
+            has_artwork: true
+        }
+    });
+    assert.equal(reply.handled, true);
+    assert.match(reply.reply, /quote ready|total/i);
+});

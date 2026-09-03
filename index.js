@@ -598,6 +598,12 @@ function parseProductRequestDetails(text = '') {
     let side = '';
     if (normalized.includes('double sided') || normalized.includes('double-sided') || normalized.includes('both sided') || normalized.includes('both-sided') || normalized.includes('2 sided') || normalized.includes('2-sided')) side = 'double';
     if (normalized.includes('single sided') || normalized.includes('single-sided') || normalized.includes('one sided') || normalized.includes('one-sided') || normalized.includes('1 sided') || normalized.includes('1-sided')) side = 'single';
+    const requestedPoles = /\b(with pole|with poles|need poles|pole included|include poles)\b/.test(normalized)
+        ? true
+        : (/\b(no pole|no poles|without pole|without poles)\b/.test(normalized) ? false : null);
+    const requestedInstallation = /\b(with install|with installation|need install|need installation|include installation)\b/.test(normalized)
+        ? true
+        : (/\b(no install|no installation|without install|without installation)\b/.test(normalized) ? false : null);
 
     const sizeToken = (normalized.match(/\b(a0|a1|a2|a3|a4|a5|a6)\b/) || [])[1] || '';
     const finishOptions = [...new Set(products.map((p) => normalizeTextForMatch(p.Finish)).filter(Boolean))];
@@ -613,11 +619,19 @@ function parseProductRequestDetails(text = '') {
         .split(' ')
         .filter((token) => token.length > 1 && !PRODUCT_TEXT_STOP_WORDS.has(token) && !/^\d+$/.test(token));
 
-    return { normalized, tokens, quantity, side, sizeToken, finish, dimensions, hasArtwork };
+    return { normalized, tokens, quantity, side, sizeToken, finish, dimensions, hasArtwork, requestedPoles, requestedInstallation };
 }
 
 function scoreProductVariant(product, request) {
-    const normalizedName = normalizeTextForMatch([product.Name, product.Category, product.Subcategory, product.SKU, product.Aliases].join(' '));
+    const normalizedName = normalizeTextForMatch([
+        product.Aliases,
+        product.Name,
+        product.Category,
+        product.Subcategory,
+        product.SubSubcategory,
+        product.SubSubSubcategory,
+        product.SKU
+    ].join(' '));
     const normalizedFinish = normalizeTextForMatch(product.Finish);
     const normalizedSide = normalizeTextForMatch(product.SingleOrDoubleSided);
     const normalizedSize = normalizeTextForMatch(product.Size);
@@ -690,14 +704,17 @@ function inferActiveCatalogFocus(jid, currentText = '') {
 
 function productSearchBlob(product) {
     return normalizeTextForMatch([
+        product.Aliases,
         product.Name,
         product.Category,
         product.Subcategory,
         product.SubSubcategory,
+        product.SubSubSubcategory,
         product.SKU,
-        product.Aliases,
         product.Size,
-        product.Finish
+        product.Finish,
+        product.SingleOrDoubleSided,
+        product.UnitsPerProduct
     ].join(' '));
 }
 
@@ -838,8 +855,9 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
         return `Before I finalize pricing for *${name}*, do you already have print-ready artwork? If not, I’ll add a design fee of ${formatCurrency(designFeeFlat)}.`;
     }
     const designFee = (requiresArtwork && request.hasArtwork === false) ? designFeeFlat : 0;
-    const polesCost = toNumber(product.PolePrice) * qty;
-    const installationFee = toNumber(product.InstallationFee) * qty;
+    const polesAvailable = isTruthyYes(product.PolesAvailable) || toNumber(product.PolePrice) > 0;
+    const polesCost = request.requestedPoles === true && polesAvailable ? (toNumber(product.PolePrice) * qty) : 0;
+    const installationFee = request.requestedInstallation === true ? (toNumber(product.InstallationFee) * qty) : 0;
     const total = materialTotal + designFee + polesCost + installationFee;
     const details = [product.Size, product.Finish, product.SingleOrDoubleSided].filter(Boolean).join(' • ');
 
@@ -1109,6 +1127,66 @@ function trimTextForOpenAI(value, maxLength = 4000) {
 
 function getOpenAIModelCandidates() {
     return [...new Set([activeOpenAIModel, OPENAI_MODEL, ...OPENAI_MODEL_FALLBACKS].filter(Boolean))];
+}
+
+function parseJsonFromOpenAIText(text = '') {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {}
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+        const candidate = raw.slice(start, end + 1);
+        try {
+            return JSON.parse(candidate);
+        } catch {}
+    }
+    return null;
+}
+
+async function extractQuoteRequestWithOpenAI(userText, jid = '') {
+    if (!openaiClient) return null;
+    const trimmed = String(userText || '').trim();
+    if (!trimmed) return null;
+    const quoteLike = /\b(quote|price|pricing|cost|print|sign|signage|banner|card|cards|flyer|sticker|label|poster)\b/i.test(trimmed);
+    if (!quoteLike && !quoteConversationState.has(jid)) return null;
+
+    const productContext = trimTextForOpenAI(buildProductContextForAI(trimmed, jid), 2200);
+    const messages = [
+        {
+            role: 'system',
+            content: [
+                'Extract quoting details from the customer message for a deterministic CSV pricing engine.',
+                'Return JSON only. No markdown. No explanation.',
+                'Never provide or calculate pricing.',
+                'Use null when unknown.',
+                'Schema keys:',
+                '{"intent":"request_quote|other","confidence":0.0,"product_query":"","category":"","subcategory":"","subSubcategory":"","subSubSubcategory":"","size":"","finish":"","sided_option":"","quantity":null,"has_artwork":null,"dimensions":{"width":null,"height":null,"unit":null},"requested_poles":null,"requested_installation":null,"needs_clarification":false,"clarification_question":null}',
+                `Catalog context:\n${productContext}`
+            ].join('\n')
+        },
+        { role: 'user', content: trimTextForOpenAI(trimmed, 700) }
+    ];
+
+    for (const model of getOpenAIModelCandidates()) {
+        try {
+            const completion = await openaiClient.chat.completions.create({
+                model,
+                messages,
+                max_tokens: 260,
+                temperature: 0
+            });
+            const reply = String(completion.choices?.[0]?.message?.content || '').trim();
+            const parsed = parseJsonFromOpenAIText(reply);
+            if (!parsed || typeof parsed !== 'object') continue;
+            const intent = String(parsed.intent || '').toLowerCase();
+            if (intent && intent !== 'request_quote') return null;
+            return parsed;
+        } catch {}
+    }
+    return null;
 }
 
 async function generateOpenAIReply(userText, jid = '') {
@@ -1546,11 +1624,13 @@ async function startBot(fingerprintIndex = 0) {
                             continue;
                         }
 
+                        const extractedQuoteRequest = await extractQuoteRequestWithOpenAI(text, jid);
                         const quoteFlow = handleQuoteConversationMessage({
                             jid,
                             text,
                             products,
-                            stateStore: quoteConversationState
+                            stateStore: quoteConversationState,
+                            requestDetails: extractedQuoteRequest
                         });
                         logQuoteFlowDiagnostics(jid);
                         if (quoteFlow.handled && quoteFlow.reply) {
