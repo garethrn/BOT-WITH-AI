@@ -151,7 +151,7 @@ function getFixedPricingRule(product = {}) {
 function calculateFixedPrice(product, qty) {
     const pricingRule = getFixedPricingRule(product);
     const unitsPerPack = pricingRule.unitsPerPack;
-    const packPrice = toNumber(product.FixedPrice);
+    const packPrice = toNumber(product.FixedPrice) > 0 ? toNumber(product.FixedPrice) : toNumber(product.UnitPricing);
     if (pricingRule.pricingMode === 'unit') {
         if (pricingRule.minQty > 0 && qty < pricingRule.minQty) {
             return { total: Number.NaN, unitsPerPack: 1, packs: 0, pricingMode: 'unit', minQty: pricingRule.minQty };
@@ -176,13 +176,14 @@ function getProductDisplayPrice(product) {
         return `${formatCurrency(product.PricePerSqm)}/m²${minText}`;
     }
     const pricingRule = getFixedPricingRule(product);
+    const fixedPrice = toNumber(product.FixedPrice) > 0 ? toNumber(product.FixedPrice) : toNumber(product.UnitPricing);
     if (pricingRule.pricingMode === 'unit') {
         const minText = pricingRule.minQty > 0 ? ` (min qty ${pricingRule.minQty})` : '';
-        return `${formatCurrency(product.FixedPrice)}/unit${minText}`;
+        return `${formatCurrency(fixedPrice)}/unit${minText}`;
     }
     const unitsPerPack = pricingRule.unitsPerPack;
     const unitText = unitsPerPack > 1 ? `/${unitsPerPack} units` : '/unit';
-    return `${formatCurrency(product.FixedPrice)}${unitText}`;
+    return `${formatCurrency(fixedPrice)}${unitText}`;
 }
 
 function buildProductLine(product, index) {
@@ -2048,6 +2049,18 @@ app.post('/api/ai/new-learning', writeRateLimiter, async (req, res) => {
         console.error('❌ Failed to save new AI learning rule:', error?.message || error);
         return res.status(500).json({ error: 'Failed to save new AI learning rule.' });
     }
+});
+
+app.post('/api/ai/new-openai-learning/instruction', writeRateLimiter, (req, res) => {
+    const instruction = String(req.body?.instruction || '').trim();
+    if (!instruction) {
+        return res.status(400).json({ error: 'instruction is required.' });
+    }
+    const result = teachBehavior(instruction, [], { source: 'new_openai_learning' });
+    return res.json({
+        message: 'New OpenAI learning instruction saved and active immediately.',
+        ...result
+    });
 });
 
 app.post('/api/ai/learn-from-chat', writeRateLimiter, (req, res) => {

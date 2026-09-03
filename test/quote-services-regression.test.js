@@ -48,6 +48,14 @@ test('fixed price product uses CSV price only', () => {
     assert.equal(quote.total, 775);
 });
 
+test('fixed price falls back to numeric UnitPricing when FixedPrice is missing', () => {
+    const row = { ...sampleProducts[0], FixedPrice: '', UnitPricing: '3.50' };
+    const quote = calculateQuote(row, { quantity: 500, hasArtwork: true });
+    assert.equal(quote.ok, true);
+    assert.equal(quote.base, 1750);
+    assert.equal(quote.total, 1750);
+});
+
 test('sqm product calculates with min price floor and quantity', () => {
     const quote = calculateQuote(sampleProducts[1], {
         quantity: 2,
