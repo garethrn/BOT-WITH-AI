@@ -31,7 +31,7 @@ const {
     parseProductsCsvContent,
     validateProductCsvHeaders
 } = require('./lib/csv-loader');
-const { handleQuoteConversationMessage, isGreetingMessage, buildFreshQuoteStartMessage } = require('./lib/quote-state-machine');
+const { handleQuoteConversationMessage, isGreetingMessage } = require('./lib/quote-state-machine');
 
 const BROWSER_FINGERPRINTS = [
     ['Mac OS', 'Chrome', '1.0.0'],
@@ -937,6 +937,14 @@ function buildConversationContextForAI(jid, currentUserText = '') {
     return recent.slice(-8);
 }
 
+function buildGreetingReply(userText = '') {
+    const strictLearnedReply = generateLearnedReply(userText, { minScore: 450, includeMeta: true });
+    if (strictLearnedReply && strictLearnedReply.source === 'responseRules') {
+        return strictLearnedReply.reply;
+    }
+    return 'Hi 👋 Thank you for your message. Is there anything we can help with today?';
+}
+
 async function sendTrackedMessage(jid, text, role = 'bot') {
     if (!botSocket) throw new Error('WhatsApp socket not ready');
     await botSocket.sendMessage(jid, { text });
@@ -1247,9 +1255,9 @@ async function startBot(fingerprintIndex = 0) {
 
                     if (isGreetingMessage(normalizedText)) {
                         quoteConversationState.delete(jid);
-                        const freshStart = buildFreshQuoteStartMessage(products);
-                        await sendTrackedMessage(jid, freshStart);
-                        rememberConversationReply('customer greeting restart quote', freshStart);
+                        const greetingReply = buildGreetingReply(text);
+                        await sendTrackedMessage(jid, greetingReply);
+                        rememberConversationReply('customer greeting', greetingReply);
                     } else if (normalizedText.startsWith('products ')) {
                         quoteConversationState.delete(jid);
                         const keyword = normalizedText.replace(/^products\s+/, '').trim();
@@ -1839,6 +1847,7 @@ module.exports = {
     parseDimensionsFromText,
     parseQuantityFromText,
     parseProductRequestDetails,
+    buildGreetingReply,
     buildProductContextForAI,
     buildCsvPricingReply,
     selectProductsByQuantityTier,
