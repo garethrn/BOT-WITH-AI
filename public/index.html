@@ -39,7 +39,7 @@
     .msg.admin { background: #1d4ed8; justify-self: end; }
     .msg .meta { font-size: 11px; color: #cbd5e1; margin-bottom: 4px; }
     .controls, form { display: grid; gap: 8px; }
-    input, textarea, button { border-radius: 10px; border: 1px solid var(--line); padding: 10px; background: #0f172a; color: var(--text); }
+    input, textarea, button, select { border-radius: 10px; border: 1px solid var(--line); padding: 10px; background: #0f172a; color: var(--text); }
     button { cursor: pointer; background: #12314a; }
     button:hover { filter: brightness(1.08); }
     .btn-ok { background: #134e4a; }
@@ -410,30 +410,30 @@
         item.onclick = () => selectChat(chat.jid);
         list.appendChild(item);
       }
+    }
 
-      function renderLearnFromChatOptions() {
-        const select = el('learnFromChatJid');
-        if (!select) return;
-        const previous = select.value || state.activeJid;
-        const options = state.chats || [];
-        select.innerHTML = '';
-        if (!options.length) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = 'No chats available';
-          select.appendChild(opt);
-          return;
-        }
-        for (const chat of options) {
-          const opt = document.createElement('option');
-          opt.value = chat.jid;
-          const label = chat.name ? `${chat.name} (${chat.phone || chat.jid})` : (chat.phone || chat.jid);
-          opt.textContent = label;
-          select.appendChild(opt);
-        }
-        const preferred = options.find((chat) => chat.jid === previous) || options.find((chat) => chat.jid === state.activeJid) || options[0];
-        select.value = preferred?.jid || '';
+    function renderLearnFromChatOptions() {
+      const select = el('learnFromChatJid');
+      if (!select) return;
+      const previous = select.value || state.activeJid;
+      const options = state.chats || [];
+      select.innerHTML = '';
+      if (!options.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No chats available';
+        select.appendChild(opt);
+        return;
       }
+      for (const chat of options) {
+        const opt = document.createElement('option');
+        opt.value = chat.jid;
+        const label = chat.name ? `${chat.name} (${chat.phone || chat.jid})` : (chat.phone || chat.jid);
+        opt.textContent = label;
+        select.appendChild(opt);
+      }
+      const preferred = options.find((chat) => chat.jid === previous) || options.find((chat) => chat.jid === state.activeJid) || options[0];
+      select.value = preferred?.jid || '';
     }
 
     function renderMessages(messages) {
