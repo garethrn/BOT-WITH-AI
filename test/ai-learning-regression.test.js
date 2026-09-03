@@ -70,6 +70,21 @@ test('generateLearnedReply boosts taught rules over conversation memory during s
     }
 });
 
+test('generateLearnedReply returns taught responseRules on strong partial match with moderate threshold', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.rememberConversationReply('where are you based', 'Old memory location reply.');
+        learning.teachBehavior('rule', [
+            { when: 'where are you based in johannesburg', reply: 'We are based in Johannesburg and deliver nationwide.' }
+        ]);
+        const strict = learning.generateLearnedReply('please confirm where you are based in johannesburg today', { minScore: 260, includeMeta: true });
+        assert.equal(strict.reply, 'We are based in Johannesburg and deliver nationwide.');
+        assert.equal(strict.source, 'responseRules');
+    } finally {
+        cleanup(filePath);
+    }
+});
+
 test('rememberConversationReply ignores very short generic user prompts', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {
