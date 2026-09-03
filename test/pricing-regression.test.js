@@ -76,3 +76,17 @@ test('buildCsvPricingReply asks a signage-specific follow-up without drifting pr
     assert.match(reply, /single-sided|double-sided|size/i);
     assert.doesNotMatch(reply, /business cards/i);
 });
+
+test('buildCsvPricingReply adds design fee when artwork is not ready', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('quote 50 bookmarks laminated single sided 190x60 no artwork');
+    assert.ok(reply);
+    assert.match(reply, /Design fee:/i);
+});
+
+test('buildCsvPricingReply excludes design fee when artwork is ready', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('quote 50 bookmarks laminated single sided 190x60 yes artwork ready');
+    assert.ok(reply);
+    assert.doesNotMatch(reply, /Design fee/i);
+});

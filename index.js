@@ -114,6 +114,11 @@ function toNumber(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function isTruthyYes(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['yes', 'true', '1', 'y'].includes(normalized);
+}
+
 function formatCurrency(value) {
     return `R${toNumber(value).toFixed(2)}`;
 }
@@ -311,6 +316,15 @@ function normalizeContactPhone(raw) {
     return '';
 }
 
+function normalizeConversationJid(rawJid) {
+    const value = String(rawJid || '').trim();
+    if (!value) return '';
+    if (!value.includes('@')) return normalizeToJid(value);
+    const digits = extractPhoneDigitsFromJid(value);
+    if (digits) return `${digits}@s.whatsapp.net`;
+    return value;
+}
+
 function extractPhoneDigitsFromJid(jid) {
     const value = String(jid || '').trim();
     if (!value) return '';
@@ -320,8 +334,11 @@ function extractPhoneDigitsFromJid(jid) {
 }
 
 function phoneFromJid(jid) {
-    const explicit = contactPhones[String(jid || '').trim()];
-    const digits = explicit || extractPhoneDigitsFromJid(jid);
+    const canonicalJid = normalizeConversationJid(jid);
+    const fromJid = extractPhoneDigitsFromJid(canonicalJid);
+    const explicitRaw = contactPhones[canonicalJid] || contactPhones[String(jid || '').trim()];
+    const explicit = normalizeContactPhone(explicitRaw);
+    const digits = fromJid || explicit;
     return digits ? `+${digits}` : '';
 }
 
@@ -343,9 +360,9 @@ function resolveIncomingJid(key) {
     const primary = key?.remoteJid || '';
     const participant = key?.participant || '';
     if (isIgnoredChatJid(primary)) return primary;
-    if (isDirectUserJid(primary)) return primary;
-    if (isDirectUserJid(participant)) return participant;
-    return primary || participant || '';
+    if (isDirectUserJid(primary)) return normalizeConversationJid(primary);
+    if (isDirectUserJid(participant)) return normalizeConversationJid(participant);
+    return normalizeConversationJid(primary || participant || '');
 }
 
 function extractIncomingMessageText(message) {
@@ -410,25 +427,63 @@ function conversationStatusForJid(jid) {
     return 'idle';
 }
 
+function getConversationMessagesByJid(jid) {
+    const direct = chatLog.get(jid);
+    if (Array.isArray(direct)) return direct;
+    for (const [key, value] of chatLog.entries()) {
+        if (normalizeConversationJid(key) === jid && Array.isArray(value)) return value;
+    }
+    return [];
+}
+
+function getConversationLastActivityByJid(jid) {
+    const direct = chatLastActivity.get(jid);
+    if (direct) return direct;
+    for (const [key, value] of chatLastActivity.entries()) {
+        if (normalizeConversationJid(key) === jid && value) return value;
+    }
+    return null;
+}
+
+function getContactNameByJid(jid) {
+    if (contactNames[jid]) return contactNames[jid];
+    const targetDigits = extractPhoneDigitsFromJid(jid);
+    if (!targetDigits) return '';
+    for (const [key, name] of Object.entries(contactNames)) {
+        if (!name) continue;
+        if (extractPhoneDigitsFromJid(key) === targetDigits) return name;
+    }
+    return '';
+}
+
 function getConversationSummaries() {
     const summaries = [];
-    const allJids = new Set([
+    const sourceJids = [
         ...Array.from(chatLog.keys()),
+        ...Array.from(chatLastActivity.keys()),
         ...Object.keys(contactNames),
         ...orders.map((order) => order.jid),
         ...learningLeads.map((lead) => lead.jid)
-    ]);
+    ];
+    const allJids = new Set();
+    for (const source of sourceJids) {
+        const normalized = normalizeConversationJid(source);
+        if (!normalized) continue;
+        if (isIgnoredChatJid(normalized)) continue;
+        if (!isDirectUserJid(normalized)) continue;
+        allJids.add(normalized);
+    }
 
     for (const jid of allJids) {
-        const messages = chatLog.get(jid) || [];
+        const messages = getConversationMessagesByJid(jid);
         const last = messages[messages.length - 1];
         summaries.push({
             jid,
             phone: phoneFromJid(jid),
-            name: contactNames[jid] || '',
+            name: getContactNameByJid(jid),
             lastMessage: last?.text || '',
             lastRole: last?.role || '',
-            lastTimestamp: last?.timestamp || chatLastActivity.get(jid) || null,
+            lastTimestamp: last?.timestamp || getConversationLastActivityByJid(jid) || null,
             paused: pausedChats.has(jid),
             status: conversationStatusForJid(jid),
             messageCount: messages.length
@@ -480,10 +535,19 @@ function parseQuantityFromText(text = '', dimensions = null) {
     return candidates[0];
 }
 
+function parseArtworkStatusFromText(text = '') {
+    const normalized = normalizeTextForMatch(text);
+    if (!normalized) return null;
+    if (/\b(no|not|dont|don't|no artwork|not ready|need design|not print ready)\b/i.test(normalized)) return false;
+    if (/\b(yes|have artwork|print ready|artwork ready|ready artwork)\b/i.test(normalized)) return true;
+    return null;
+}
+
 function parseProductRequestDetails(text = '') {
     const normalized = normalizeTextForMatch(text);
     const dimensions = parseDimensionsFromText(normalized);
     const quantity = parseQuantityFromText(normalized, dimensions);
+    const hasArtwork = parseArtworkStatusFromText(normalized);
 
     let side = '';
     if (normalized.includes('double sided') || normalized.includes('double-sided') || normalized.includes('both sided') || normalized.includes('both-sided') || normalized.includes('2 sided') || normalized.includes('2-sided')) side = 'double';
@@ -503,7 +567,7 @@ function parseProductRequestDetails(text = '') {
         .split(' ')
         .filter((token) => token.length > 1 && !PRODUCT_TEXT_STOP_WORDS.has(token) && !/^\d+$/.test(token));
 
-    return { normalized, tokens, quantity, side, sizeToken, finish, dimensions };
+    return { normalized, tokens, quantity, side, sizeToken, finish, dimensions, hasArtwork };
 }
 
 function scoreProductVariant(product, request) {
@@ -709,7 +773,12 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
         materialTotal = pricing.total;
     }
 
-    const designFee = toNumber(product.DesignFee) * qty;
+    const designFeeFlat = toNumber(product.DesignFee);
+    const requiresArtwork = isTruthyYes(product.RequiresArtwork);
+    if (requiresArtwork && designFeeFlat > 0 && request.hasArtwork === null) {
+        return `Before I finalize pricing for *${name}*, do you already have print-ready artwork? If not, I’ll add a design fee of ${formatCurrency(designFeeFlat)}.`;
+    }
+    const designFee = (requiresArtwork && request.hasArtwork === false) ? designFeeFlat : 0;
     const polesCost = toNumber(product.PolePrice) * qty;
     const installationFee = toNumber(product.InstallationFee) * qty;
     const total = materialTotal + designFee + polesCost + installationFee;
@@ -718,6 +787,8 @@ function buildQuoteForMatchedProduct(product, request, options = {}) {
     return [
         `Based on your details, the closest match is *${name}*${details ? ` (${details})` : ''}.`,
         options.closestSizeNote || '',
+        request.hasArtwork === true ? '• Artwork: Print-ready supplied' : '',
+        request.hasArtwork === false ? '• Artwork: Design required' : '',
         `Quantity: ${qty}${dimensionsLabel ? ` | Size used: ${dimensionsLabel}` : ''}`,
         `• Material: ${formatCurrency(materialTotal)}`,
         designFee > 0 ? `• Design fee: ${formatCurrency(designFee)}` : '',
@@ -842,7 +913,7 @@ function buildCsvPricingReply(text = '', jid = '') {
             materialTotal = calculateFixedPrice(product, request.quantity).total;
         }
         const total = materialTotal
-            + (toNumber(product.DesignFee) * request.quantity)
+            + ((isTruthyYes(product.RequiresArtwork) && request.hasArtwork === false) ? toNumber(product.DesignFee) : 0)
             + (toNumber(product.PolePrice) * request.quantity)
             + (toNumber(product.InstallationFee) * request.quantity);
         return { product, total, sizeDistance };
@@ -1529,15 +1600,15 @@ app.get('/api/admin/chats', readRateLimiter, (_req, res) => {
 });
 
 app.get('/api/admin/chats/:jid', readRateLimiter, (req, res) => {
-    const jid = String(req.params.jid || '').trim();
+    const jid = normalizeConversationJid(req.params.jid || '');
     if (!jid) return res.status(400).json({ error: 'Missing jid.' });
     res.json({
         jid,
         phone: phoneFromJid(jid),
-        name: contactNames[jid] || '',
+        name: getContactNameByJid(jid),
         paused: pausedChats.has(jid),
         status: conversationStatusForJid(jid),
-        messages: chatLog.get(jid) || [],
+        messages: getConversationMessagesByJid(jid),
         orders: orders.filter((order) => order.jid === jid)
     });
 });
@@ -1847,6 +1918,9 @@ module.exports = {
     parseDimensionsFromText,
     parseQuantityFromText,
     parseProductRequestDetails,
+    phoneFromJid,
+    resolveIncomingJid,
+    getConversationSummaries,
     buildGreetingReply,
     buildProductContextForAI,
     buildCsvPricingReply,
