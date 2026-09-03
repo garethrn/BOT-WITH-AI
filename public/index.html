@@ -196,6 +196,16 @@
           </form>
           <div id="teachResult" class="mini"></div>
           <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+          <h3>New AI Learning (Instant Correction)</h3>
+          <div class="muted" style="margin-bottom:8px;">When the bot answers incorrectly, add the customer question and the correct reply here. It is saved and applied immediately.</div>
+          <form id="newLearningForm">
+            <textarea id="newLearningQuestion" rows="2" placeholder="Customer question that was answered incorrectly" required></textarea>
+            <textarea id="newLearningReply" rows="3" placeholder="Correct response the bot must use from now on" required></textarea>
+            <label class="badge pill-toggle"><input id="newLearningOpenAIRewrite" type="checkbox"> Improve wording with OpenAI before saving</label>
+            <button type="submit">Save New AI Learning Rule</button>
+          </form>
+          <div id="newLearningResult" class="mini"></div>
+          <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
           <h3>Learn from Specific Chat</h3>
           <div class="muted" style="margin-bottom:8px;">Select a conversation and let the AI learn user messages with the assistant replies from that chat.</div>
           <form id="learnFromChatForm">
@@ -697,6 +707,27 @@
         }
         await refreshDashboardState();
       } catch (e) { el('teachResult').textContent = e.message; }
+    });
+
+    el('newLearningForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const question = el('newLearningQuestion').value.trim();
+        const correctedReply = el('newLearningReply').value.trim();
+        const improveWithOpenAI = el('newLearningOpenAIRewrite').checked;
+        const data = await getJson('/api/ai/new-learning', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, correctedReply, improveWithOpenAI })
+        });
+        el('newLearningResult').textContent = `${data.message} Rules: ${data.rules}. Removed old memory replies: ${data.removedMemories}.`;
+        el('newLearningQuestion').value = '';
+        el('newLearningReply').value = '';
+        el('newLearningOpenAIRewrite').checked = false;
+        await refreshDashboardState();
+      } catch (e) {
+        el('newLearningResult').textContent = e.message;
+      }
     });
 
     el('learnFromChatForm').addEventListener('submit', async (event) => {

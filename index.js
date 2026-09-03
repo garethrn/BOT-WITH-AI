@@ -24,7 +24,8 @@ const {
     generateLearnedReply,
     buildOpenAISystemPrompt,
     rememberConversationReply,
-    learnFromChatMessages
+    learnFromChatMessages,
+    applyImmediateCorrection
 } = require('./lib/ai-learning');
 const {
     parseProductsCsvStream,
@@ -1347,6 +1348,33 @@ async function generateAICoachReply(userMessage, history = []) {
         } catch (error) {
             console.error('⚠️ AI coach fallback due to OpenAI error:', error?.message || error);
         }
+
+        async function rewriteCorrectionWithOpenAI(question, correctedReply) {
+            const cleanQuestion = String(question || '').trim();
+            const cleanReply = String(correctedReply || '').trim();
+            if (!openaiClient || !cleanQuestion || !cleanReply) return cleanReply;
+            try {
+                const completion = await openaiClient.chat.completions.create({
+                    model: activeOpenAIModel || OPENAI_MODEL,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'Rewrite the assistant reply to be friendly, concise, and human sales-style. Keep exact meaning and business intent. Return only the rewritten reply.'
+                        },
+                        {
+                            role: 'user',
+                            content: `Customer question:\n${trimTextForOpenAI(cleanQuestion, 600)}\n\nCorrect response to preserve:\n${trimTextForOpenAI(cleanReply, 800)}`
+                        }
+                    ],
+                    max_tokens: 220,
+                    temperature: 0.2
+                });
+                const rewritten = String(completion.choices?.[0]?.message?.content || '').trim();
+                return rewritten || cleanReply;
+            } catch {
+                return cleanReply;
+            }
+        }
     }
 
     return [
@@ -1987,6 +2015,25 @@ app.post('/api/ai/teach', writeRateLimiter, (req, res) => {
     res.json({
         message: 'Teaching instructions saved.',
         ...result
+    });
+});
+
+app.post('/api/ai/new-learning', writeRateLimiter, async (req, res) => {
+    const question = String(req.body?.question || req.body?.wrongQuestion || '').trim();
+    const correctedReply = String(req.body?.correctedReply || req.body?.reply || '').trim();
+    const improveWithOpenAI = Boolean(req.body?.improveWithOpenAI);
+    if (!question || !correctedReply) {
+        return res.status(400).json({ error: 'question and correctedReply are required.' });
+    }
+    const finalReply = improveWithOpenAI
+        ? await rewriteCorrectionWithOpenAI(question, correctedReply)
+        : correctedReply;
+    const result = applyImmediateCorrection(question, finalReply, { source: 'new_ai_learning' });
+    const preview = generateLearnedReply(question, { minScore: 1, includeMeta: true });
+    return res.json({
+        message: 'New AI Learning rule saved and active immediately.',
+        ...result,
+        preview: preview?.reply || finalReply
     });
 });
 

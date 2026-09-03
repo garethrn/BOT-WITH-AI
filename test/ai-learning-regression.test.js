@@ -178,3 +178,21 @@ test('learnFromChatMessages imports from selected chat and updates existing rule
         cleanup(filePath);
     }
 });
+
+test('applyImmediateCorrection updates rule and removes stale conversation memory immediately', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        learning.rememberConversationReply('what are your opening hours', 'Old hours reply.');
+        const result = learning.applyImmediateCorrection(
+            'What are your opening hours?',
+            'We are open Monday to Friday, 8am to 5pm.'
+        );
+        assert.equal(result.applied, true);
+        assert.ok(result.removedMemories >= 1);
+        const strict = learning.generateLearnedReply('what are your opening hours', { minScore: 260, includeMeta: true });
+        assert.equal(strict.reply, 'We are open Monday to Friday, 8am to 5pm.');
+        assert.equal(strict.source, 'responseRules');
+    } finally {
+        cleanup(filePath);
+    }
+});
