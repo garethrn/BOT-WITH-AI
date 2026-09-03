@@ -192,6 +192,19 @@ test('active quote session allows non-quote conversation to fall through for AI 
         stateStore
     });
 
+    handleQuoteConversationMessage({
+        jid: 'interrupt@s.whatsapp.net',
+        text: 'laminated double sided',
+        products: sampleProducts,
+        stateStore
+    });
+    handleQuoteConversationMessage({
+        jid: 'interrupt@s.whatsapp.net',
+        text: 'yes artwork ready',
+        products: sampleProducts,
+        stateStore
+    });
+
     const reply = handleQuoteConversationMessage({
         jid: 'interrupt@s.whatsapp.net',
         text: 'what are your opening hours',
