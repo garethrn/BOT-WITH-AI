@@ -1348,33 +1348,6 @@ async function generateAICoachReply(userMessage, history = []) {
         } catch (error) {
             console.error('⚠️ AI coach fallback due to OpenAI error:', error?.message || error);
         }
-
-        async function rewriteCorrectionWithOpenAI(question, correctedReply) {
-            const cleanQuestion = String(question || '').trim();
-            const cleanReply = String(correctedReply || '').trim();
-            if (!openaiClient || !cleanQuestion || !cleanReply) return cleanReply;
-            try {
-                const completion = await openaiClient.chat.completions.create({
-                    model: activeOpenAIModel || OPENAI_MODEL,
-                    messages: [
-                        {
-                            role: 'system',
-                            content: 'Rewrite the assistant reply to be friendly, concise, and human sales-style. Keep exact meaning and business intent. Return only the rewritten reply.'
-                        },
-                        {
-                            role: 'user',
-                            content: `Customer question:\n${trimTextForOpenAI(cleanQuestion, 600)}\n\nCorrect response to preserve:\n${trimTextForOpenAI(cleanReply, 800)}`
-                        }
-                    ],
-                    max_tokens: 220,
-                    temperature: 0.2
-                });
-                const rewritten = String(completion.choices?.[0]?.message?.content || '').trim();
-                return rewritten || cleanReply;
-            } catch {
-                return cleanReply;
-            }
-        }
     }
 
     return [
@@ -1389,6 +1362,33 @@ async function generateAICoachReply(userMessage, history = []) {
         '*Next question to ask*',
         'Can you share quantity, size, and deadline so I can give you an accurate quote?'
     ].join('\n');
+}
+
+async function rewriteCorrectionWithOpenAI(question, correctedReply) {
+    const cleanQuestion = String(question || '').trim();
+    const cleanReply = String(correctedReply || '').trim();
+    if (!openaiClient || !cleanQuestion || !cleanReply) return cleanReply;
+    try {
+        const completion = await openaiClient.chat.completions.create({
+            model: activeOpenAIModel || OPENAI_MODEL,
+            messages: [
+                {
+                    role: 'system',
+                    content: 'Rewrite the assistant reply to be friendly, concise, and human sales-style. Keep exact meaning and business intent. Return only the rewritten reply.'
+                },
+                {
+                    role: 'user',
+                    content: `Customer question:\n${trimTextForOpenAI(cleanQuestion, 600)}\n\nCorrect response to preserve:\n${trimTextForOpenAI(cleanReply, 800)}`
+                }
+            ],
+            max_tokens: 220,
+            temperature: 0.2
+        });
+        const rewritten = String(completion.choices?.[0]?.message?.content || '').trim();
+        return rewritten || cleanReply;
+    } catch {
+        return cleanReply;
+    }
 }
 
 async function startBot(fingerprintIndex = 0) {
@@ -2133,6 +2133,7 @@ module.exports = {
     buildGreetingReply,
     buildProductContextForAI,
     buildCsvPricingReply,
+    rewriteCorrectionWithOpenAI,
     selectProductsByQuantityTier,
     pickBestQuantityTier,
     runOpenAIConnectivityCheck

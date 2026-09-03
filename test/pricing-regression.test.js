@@ -15,6 +15,10 @@ test('parseQuantityFromText does not confuse dimensions with quantity', () => {
     assert.equal(pricing.parseQuantityFromText('quote 500 business cards laminated double sided'), 500);
 });
 
+test('new ai learning rewrite helper is available at module scope', () => {
+    assert.equal(typeof pricing.rewriteCorrectionWithOpenAI, 'function');
+});
+
 test('buildCsvPricingReply selects fixed pricing tier matching quantity and options', async () => {
     await pricing.loadProducts();
     const reply = pricing.buildCsvPricingReply('Please quote 500 business cards laminated double sided');
