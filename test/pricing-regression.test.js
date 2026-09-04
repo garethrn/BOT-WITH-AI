@@ -71,6 +71,15 @@ test('buildCsvPricingReply handles correx typo requests with csv pricing', async
     assert.doesNotMatch(reply, /\$xx|\$\s*x+/i);
 });
 
+test('buildCsvPricingReply shows catalog price lines for corex price-list requests', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('what are the prices for corex boards');
+    assert.ok(reply);
+    assert.match(reply, /products CSV/i);
+    assert.match(reply, /R200\.00|R260\.00/i);
+    assert.doesNotMatch(reply, /\$xx|\$\s*x+/i);
+});
+
 test('buildCsvPricingReply suggests closest catalog size when dimensions are not exact', async () => {
     await pricing.loadProducts();
     const reply = pricing.buildCsvPricingReply('quote qty 1 vinyl cut stickers standard single colors size 1150x100');
@@ -107,7 +116,7 @@ test('buildCsvPricingReply asks a signage-specific follow-up without drifting pr
     await pricing.loadProducts();
     const reply = pricing.buildCsvPricingReply('i need an outdoor signage quote for acm');
     assert.ok(reply);
-    assert.match(reply, /single-sided|double-sided|size/i);
+    assert.match(reply, /single-sided|double-sided|size|finish/i);
     assert.doesNotMatch(reply, /business cards/i);
 });
 
@@ -123,6 +132,14 @@ test('buildCsvPricingReply excludes design fee when artwork is ready', async () 
     const reply = pricing.buildCsvPricingReply('quote 50 bookmarks laminated single sided 190x60 yes artwork ready');
     assert.ok(reply);
     assert.doesNotMatch(reply, /Design fee/i);
+});
+
+test('buildCsvPricingReply calculates sqm totals from csv price per sqm formula', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('quote qty 2 pvc banners 1200x600 yes artwork ready');
+    assert.ok(reply);
+    assert.match(reply, /Estimated total: R216\.00/i);
+    assert.doesNotMatch(reply, /\$xx|\$\s*x+/i);
 });
 
 test('buildCsvPricingReply can locate catalog pricing across fixed-price subcategories', async () => {

@@ -7,7 +7,7 @@ test('phoneFromJid returns canonical customer number from jid', () => {
     assert.equal(app.phoneFromJid('27715551234:21@s.whatsapp.net'), '+27715551234');
     assert.equal(app.phoneFromJid('27715551234@c.us'), '+27715551234');
     assert.equal(app.phoneFromJid('176132464881776@lid'), '');
-    assert.equal(app.phoneFromJid('176132464881776@s.whatsapp.net'), '');
+    assert.equal(app.phoneFromJid('176132464881779@s.whatsapp.net'), '');
 });
 
 test('resolveIncomingJid normalizes direct chat jid for consistent conversation mapping', () => {

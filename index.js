@@ -61,6 +61,7 @@ const ORDERS_FILE = path.join(STORAGE_DIR, 'orders.json');
 const CONTACTS_FILE = path.join(STORAGE_DIR, 'contacts.json');
 const CONTACT_PHONES_FILE = path.join(STORAGE_DIR, 'contact_phones.json');
 const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
+const CONVERSATION_ROUTES_FILE = path.join(STORAGE_DIR, 'conversation_routes.json');
 const MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 1000;
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -93,6 +94,7 @@ let orders = [];
 let contactNames = {};
 let contactPhones = {};
 let conversationTabOverrides = {};
+let conversationRouteOverrides = {};
 
 function loadJsonFile(filePath, fallbackValue) {
     try {
@@ -201,7 +203,7 @@ function buildProductLine(product, index) {
 }
 
 function isPricingIntentMessage(text = '') {
-    return /\b(price|pricing|quote|cost|how much|unit price|sqm|square meter|m2)\b/i.test(text)
+    return /\b(price|prices|pricing|quote|cost|how much|unit ?price|sqm|square meter|m2)\b/i.test(text)
         || /\b(business cards?|flyers?|banners?|signs?|signage|stickers?|labels?|posters?|acm|printing?|corex|correx|boards?)\b/i.test(text);
 }
 
@@ -237,6 +239,11 @@ orders = loadJsonFile(ORDERS_FILE, []);
 contactNames = loadJsonFile(CONTACTS_FILE, {});
 contactPhones = loadJsonFile(CONTACT_PHONES_FILE, {});
 conversationTabOverrides = loadJsonFile(CONVERSATION_TABS_FILE, {});
+conversationRouteOverrides = loadJsonFile(CONVERSATION_ROUTES_FILE, {});
+for (const [conversationJid, routeJid] of Object.entries(conversationRouteOverrides || {})) {
+    if (!conversationJid || !routeJid) continue;
+    conversationRouteMap.set(String(conversationJid), String(routeJid));
+}
 
 function getRetryDelay(count) {
     const safeCount = Math.max(1, Number(count) || 1);
@@ -449,6 +456,8 @@ function rememberConversationRoute(conversationJid, ...routeCandidates) {
         const route = String(candidate || '').trim();
         if (!isRouteEligibleJid(route)) continue;
         conversationRouteMap.set(normalizedConversationJid, route);
+        conversationRouteOverrides[normalizedConversationJid] = route;
+        saveJsonFile(CONVERSATION_ROUTES_FILE, conversationRouteOverrides);
         return;
     }
 }
@@ -978,6 +987,7 @@ function selectProductsByQuantityTier(productsToFilter, requestedQty) {
 function buildCsvPricingReply(text = '', jid = '') {
     const pricingIntent = isPricingIntentMessage(text);
     if (!pricingIntent) return null;
+    const wantsPriceList = /\b(price|prices|pricing|cost|how much|unit ?price)\b/i.test(String(text || ''));
 
     const request = parseProductRequestDetails(text);
     const ranked = rankProductsForText(text).filter((item) => item.score > 0);
@@ -1004,12 +1014,12 @@ function buildCsvPricingReply(text = '', jid = '') {
     }
 
     const sideOptions = [...new Set(candidatePool.map((item) => normalizeTextForMatch(item.SingleOrDoubleSided)).filter(Boolean))];
-    if (!request.side && sideOptions.length > 1) {
+    if (!request.side && sideOptions.length > 1 && request.quantity) {
         return 'To quote correctly, should this be *single-sided* or *double-sided*?';
     }
 
     const sizeOptions = [...new Set(candidatePool.map((item) => String(item.Size || '').trim()).filter((value) => value && !/^custom$/i.test(value)))];
-    if (!request.sizeToken && !request.dimensions && sizeOptions.length > 1) {
+    if (!request.sizeToken && !request.dimensions && sizeOptions.length > 1 && request.quantity) {
         const preview = sizeOptions.slice(0, 3).join(', ');
         return `What size do you need for this job? For example: ${preview}.`;
     }
@@ -1026,6 +1036,15 @@ function buildCsvPricingReply(text = '', jid = '') {
     if (request.sizeToken) filtered = filtered.filter((item) => normalizeTextForMatch(item.Size).includes(request.sizeToken));
     if (filtered.length === 0) filtered = candidatePool;
     filtered = selectProductsByQuantityTier(filtered, request.quantity);
+
+    if (!request.quantity && wantsPriceList) {
+        const previewRows = selectProductsByQuantityTier(filtered, 1);
+        return [
+            'Here are matching prices from the products CSV:',
+            buildCatalogSuggestionLines(previewRows, 8),
+            'Tell me the exact quantity (and dimensions for square-meter products) and I will calculate the final total.'
+        ].join('\n\n');
+    }
 
     if (!request.quantity) {
         const sample = filtered[0];
