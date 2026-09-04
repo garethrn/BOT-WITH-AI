@@ -46,3 +46,14 @@ test('resolveIncomingJid maps lid-only inbound route back to canonical conversat
     });
     assert.equal(resolved, conversationJid);
 });
+
+test('resolveIncomingJid maps opaque s.whatsapp route back to canonical number when known', () => {
+    const conversationJid = '27738343781@s.whatsapp.net';
+    const opaqueRoute = '176132464881776@s.whatsapp.net';
+    app.rememberConversationRoute(conversationJid, opaqueRoute);
+    const resolved = app.resolveIncomingJid({
+        remoteJid: opaqueRoute,
+        participant: ''
+    });
+    assert.equal(resolved, conversationJid);
+});

@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const pricing = require('../index');
+const { parseProductsCsvContent } = require('../lib/csv-loader');
 
 test('parseDimensionsFromText supports mm, cm, and m units', () => {
     assert.deepEqual(pricing.parseDimensionsFromText('1200x600'), { widthMm: 1200, heightMm: 600 });
@@ -120,4 +123,33 @@ test('buildCsvPricingReply excludes design fee when artwork is ready', async () 
     const reply = pricing.buildCsvPricingReply('quote 50 bookmarks laminated single sided 190x60 yes artwork ready');
     assert.ok(reply);
     assert.doesNotMatch(reply, /Design fee/i);
+});
+
+test('buildCsvPricingReply can locate catalog pricing across fixed-price subcategories', async () => {
+    await pricing.loadProducts();
+    const csvPath = path.join(__dirname, '..', 'products.csv');
+    const csvContent = fs.readFileSync(csvPath, 'utf8');
+    const allProducts = await parseProductsCsvContent(csvContent);
+    const sampleRows = new Map();
+    for (const product of allProducts) {
+        if (String(product.PriceType || '').toLowerCase() !== 'fixed') continue;
+        const subcategoryKey = String(product.Subcategory || product.Name || '').trim().toLowerCase();
+        if (!subcategoryKey) continue;
+        if (sampleRows.has(subcategoryKey)) continue;
+        const size = String(product.Size || '').trim();
+        if (!size || /^custom$/i.test(size)) continue;
+        if (!pricing.parseDimensionsFromText(size) && !/\b(a0|a1|a2|a3|a4|a5|a6)\b/i.test(size)) continue;
+        sampleRows.set(subcategoryKey, product);
+    }
+
+    for (const product of sampleRows.values()) {
+        const qty = parseInt((String(product.UnitsPerProduct || '').match(/\d+/) || ['1'])[0], 10) || 1;
+        const parsedSize = pricing.parseDimensionsFromText(String(product.Size || ''));
+        const sizeToken = parsedSize ? `${parsedSize.widthMm}x${parsedSize.heightMm}` : String(product.Size || '');
+        const prompt = `quote qty ${qty} ${product.Subcategory || ''} ${product.Name || ''} ${sizeToken} ${product.Finish || ''} ${product.SingleOrDoubleSided || ''} yes artwork ready`;
+        const reply = pricing.buildCsvPricingReply(prompt);
+        assert.ok(reply, `Expected reply for ${product.Subcategory || product.Name}`);
+        assert.doesNotMatch(reply, /\$xx|\$\s*x+/i, `Placeholder price returned for ${product.Subcategory || product.Name}`);
+        assert.match(reply, /Estimated total: R|minimum order/i, `No deterministic price outcome for ${product.Subcategory || product.Name}`);
+    }
 });

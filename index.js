@@ -363,7 +363,20 @@ function normalizeConversationJid(rawJid) {
     if (!value.includes('@')) return normalizeToJid(value);
     const digits = extractPhoneDigitsFromJid(value);
     if (digits) return `${digits}@s.whatsapp.net`;
+    const mapped = resolveCanonicalFromKnownRoute(value);
+    if (mapped) return mapped;
     return value;
+}
+
+function resolveCanonicalFromKnownRoute(routeJid = '') {
+    const route = String(routeJid || '').trim();
+    if (!route) return '';
+    for (const [conversationJid, routeJidValue] of conversationRouteMap.entries()) {
+        if (String(routeJidValue || '').trim() !== route) continue;
+        const digits = extractPhoneDigitsFromJid(conversationJid);
+        if (digits) return `${digits}@s.whatsapp.net`;
+    }
+    return '';
 }
 
 function extractPhoneDigitsFromJid(jid) {
@@ -420,12 +433,10 @@ function resolveIncomingJid(key) {
     const participantDigits = extractPhoneDigitsFromJid(normalizedParticipant);
     if (primaryDigits) return `${primaryDigits}@s.whatsapp.net`;
     if (participantDigits) return `${participantDigits}@s.whatsapp.net`;
-    if (normalizedPrimary.endsWith('@lid')) {
-        for (const [conversationJid, routeJid] of conversationRouteMap.entries()) {
-            if (routeJid !== normalizedPrimary) continue;
-            if (extractPhoneDigitsFromJid(conversationJid)) return conversationJid;
-        }
-    }
+    const mappedPrimary = resolveCanonicalFromKnownRoute(normalizedPrimary);
+    if (mappedPrimary) return mappedPrimary;
+    const mappedParticipant = resolveCanonicalFromKnownRoute(normalizedParticipant);
+    if (mappedParticipant) return mappedParticipant;
     if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
     if (isDirectUserJid(normalizedParticipant)) return normalizedParticipant;
     return normalizeConversationJid(primary || participant || '');
