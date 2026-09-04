@@ -29,3 +29,14 @@ test('rememberConversationRoute keeps deliverable route and resolveOutboundJid u
     app.rememberConversationRoute(conversationJid, '120363400000111111@lid', '27712223333@s.whatsapp.net');
     assert.equal(app.resolveOutboundJid(conversationJid), '120363400000111111@lid');
 });
+
+test('resolveIncomingJid maps lid-only inbound route back to canonical conversation number', () => {
+    const conversationJid = '27715550000@s.whatsapp.net';
+    const lidRoute = '120363499999111111@lid';
+    app.rememberConversationRoute(conversationJid, lidRoute);
+    const resolved = app.resolveIncomingJid({
+        remoteJid: lidRoute,
+        participant: ''
+    });
+    assert.equal(resolved, conversationJid);
+});

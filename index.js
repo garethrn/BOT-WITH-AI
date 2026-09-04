@@ -202,7 +202,15 @@ function buildProductLine(product, index) {
 
 function isPricingIntentMessage(text = '') {
     return /\b(price|pricing|quote|cost|how much|unit price|sqm|square meter|m2)\b/i.test(text)
-        || /\b(business cards?|flyers?|banners?|signs?|stickers?|labels?|posters?|acm|printing?)\b/i.test(text);
+        || /\b(business cards?|flyers?|banners?|signs?|signage|stickers?|labels?|posters?|acm|printing?|corex|correx|boards?)\b/i.test(text);
+}
+
+function isPlaceholderPricingReply(text = '') {
+    const normalized = String(text || '').toLowerCase();
+    if (!normalized) return false;
+    return /\$\s*x{1,4}\b/i.test(normalized)
+        || /\$\s*xx\b/i.test(normalized)
+        || /here are the prices?\s+for\b/i.test(normalized) && /\$/.test(normalized);
 }
 
 function convertDimensionToMm(value, unit) {
@@ -376,7 +384,10 @@ function phoneFromJid(jid) {
 }
 
 function isDirectUserJid(jid) {
-    return typeof jid === 'string' && jid.includes('@') && !isIgnoredChatJid(jid);
+    if (typeof jid !== 'string' || !jid.includes('@')) return false;
+    if (isIgnoredChatJid(jid)) return false;
+    if (jid.endsWith('@lid')) return Boolean(extractPhoneDigitsFromJid(jid));
+    return true;
 }
 
 function isIgnoredChatJid(jid) {
@@ -406,6 +417,12 @@ function resolveIncomingJid(key) {
     if (primaryDigits) return `${primaryDigits}@s.whatsapp.net`;
     if (participantDigits) return `${participantDigits}@s.whatsapp.net`;
     if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
+    if (normalizedPrimary.endsWith('@lid')) {
+        for (const [conversationJid, routeJid] of conversationRouteMap.entries()) {
+            if (routeJid !== normalizedPrimary) continue;
+            if (extractPhoneDigitsFromJid(conversationJid)) return conversationJid;
+        }
+    }
     if (isDirectUserJid(normalizedParticipant)) return normalizedParticipant;
     return normalizeConversationJid(primary || participant || '');
 }
@@ -1700,6 +1717,13 @@ async function startBot(fingerprintIndex = 0) {
 
                         const openAIReply = await generateOpenAIReply(text, jid);
                         if (openAIReply) {
+                            if (isPlaceholderPricingReply(openAIReply)) {
+                                const csvFallback = buildCsvPricingReply(text, jid)
+                                    || 'I can only quote from our products CSV. Please share product, size, and quantity so I can give exact pricing.';
+                                await sendTrackedMessage(jid, csvFallback);
+                                rememberConversationReply(text, csvFallback);
+                                continue;
+                            }
                             await sendTrackedMessage(jid, openAIReply);
                             rememberConversationReply(text, openAIReply);
                         } else {
