@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOT WITH AI - Admin Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #121a2b;
+      --card-2: #172033;
+      --text: #e8edf7;
+      --muted: #9fb0cf;
+      --brand: #2dd4bf;
+      --danger: #f97373;
+      --ok: #34d399;
+      --line: #253250;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b1220,#111a2d); color: var(--text); overflow-x: hidden; }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 18px; width: 100%; }
+    .top { position: sticky; top: 0; z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .badge { padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 340px 1fr; gap: 12px; min-height: 560px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; }
+    .panel h2 { margin: 0; font-size: 16px; }
+    .head { padding: 12px; border-bottom: 1px solid var(--line); background: #0f1727; }
+    .body { padding: 12px; }
+    .chat-list { max-height: 560px; overflow: auto; display: grid; gap: 8px; }
+    .chat-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--card-2); cursor: pointer; transition: .15s ease; }
+    .chat-item.active { border-color: var(--brand); }
+    .chat-item:hover { transform: translateY(-1px); border-color: #3d587f; }
+    .mini { color: var(--muted); font-size: 12px; }
+    .messages { height: 430px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #0d1525; display: grid; gap: 8px; }
+    .msg { padding: 8px 10px; border-radius: 10px; max-width: 85%; border: 1px solid var(--line); }
+    .msg.user { background: #1e293b; justify-self: start; }
+    .msg.bot { background: #0f766e; justify-self: end; }
+    .msg.admin { background: #1d4ed8; justify-self: end; }
+    .msg .meta { font-size: 11px; color: #cbd5e1; margin-bottom: 4px; }
+    .controls, form { display: grid; gap: 8px; }
+    input, textarea, button, select { border-radius: 10px; border: 1px solid var(--line); padding: 10px; background: #0f172a; color: var(--text); }
+    button { cursor: pointer; background: #12314a; }
+    button:hover { filter: brightness(1.08); }
+    .btn-ok { background: #134e4a; }
+    .btn-danger { background: #4c1d1d; }
+    .sections { margin-top: 14px; display: grid; gap: 12px; }
+    .section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
+    pre { background: #0d1525; border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: auto; max-height: 220px; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .coach-box { border: 1px solid var(--line); border-radius: 10px; background: #0d1525; min-height: 230px; max-height: 280px; overflow:auto; padding:10px; display:grid; gap:8px; }
+    .coach-msg { border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+    .coach-msg.user { background:#1e293b; }
+    .coach-msg.assistant { background:#0f766e; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
+    .tab-btn { background: #0f172a; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; white-space: nowrap; }
+    .tab-btn.active { border-color: var(--brand); background: #12314a; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .pill-toggle { display: inline-flex; align-items: center; gap: 8px; }
+    .pill-toggle input { accent-color: var(--brand); }
+    .top .row + .row { margin-top: 10px; }
+    .upload-status { margin-top: 8px; word-break: break-word; }
+    .ai-stack { display: grid; gap: 8px; }
+    .ai-stack button { width: 100%; }
+    .legacy-ai { display: none; }
+    @media (max-width: 980px) {
+      .grid,.two { grid-template-columns: 1fr; }
+      .wrap { padding: 10px; }
+      .top { position: static; padding: 12px; }
+      .messages { height: 360px; }
+      .top .row { align-items: stretch; }
+      .top .row > * { width: 100%; min-width: 0 !important; }
+      input, textarea, button, select { font-size: 16px; width: 100%; min-width: 0; }
+      .tabs { padding-bottom: 8px; }
+      .tab-btn { flex: 0 0 auto; }
+      .messages, pre, .coach-box { max-width: 100%; }
+      .head .row { gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <h1 style="margin:0 0 10px 0;">BOT WITH AI - Admin Dashboard</h1>
+      <div class="row">
+        <span class="badge">Bot: <strong id="botStatus">Loading...</strong></span>
+        <span class="badge">OpenAI: <strong id="openaiStatus">Loading...</strong></span>
+        <span class="badge">Global Pause: <strong id="globalPause">No</strong></span>
+        <span class="badge">Chats: <strong id="chatCount">0</strong></span>
+        <span class="badge">Orders: <strong id="ordersCount">0</strong></span>
+        <span class="badge">Leads: <strong id="leadsCount">0</strong></span>
+        <span class="badge">Contacts: <strong id="contactsCount">0</strong></span>
+        <a class="badge" id="qrLink" href="/qr" target="_blank">Open QR</a>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input id="apiToken" type="password" placeholder="ADMIN_API_TOKEN" style="min-width:260px;">
+        <button id="refreshAll">Refresh</button>
+        <button id="openaiCheckBtn" type="button">Test OpenAI</button>
+        <label class="badge pill-toggle"><input id="autoRefreshToggle" type="checkbox"> Auto Refresh</label>
+        <select id="autoRefreshInterval">
+          <option value="15000">15s</option>
+          <option value="30000" selected>30s</option>
+          <option value="60000">60s</option>
+        </select>
+        <button id="pauseGlobal" class="btn-danger">Pause Bot</button>
+        <button id="resumeGlobal" class="btn-ok">Resume Bot</button>
+        <button id="logoutWhatsapp" class="btn-danger">Logout WhatsApp</button>
+      </div>
+      <div id="topMessage" class="mini" style="margin-top:8px;"></div>
+      <div id="openaiCheckResult" class="mini" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="tabs" id="tabsNav">
+      <button class="tab-btn active" data-tab="conversations" type="button">Conversations</button>
+      <button class="tab-btn" data-tab="ai" type="button">New AI OpenAI Learning</button>
+      <button class="tab-btn" data-tab="crm" type="button">CRM</button>
+      <button class="tab-btn" data-tab="products" type="button">Products</button>
+    </div>
+
+    <section class="tab-panel active" data-tab-panel="conversations">
+    <div class="grid">
+      <div class="panel">
+        <div class="head"><h2>Conversations</h2></div>
+        <div class="body">
+          <input id="chatSearch" type="text" placeholder="Search by name, number or keyword...">
+          <div id="chatList" class="chat-list"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="head">
+          <div class="row" style="justify-content:space-between;">
+            <h2 id="activeTitle">Select a chat</h2>
+            <div class="row">
+              <select id="moveTabSelect">
+                <option value="main">Main</option>
+                <option value="quoted">Quoted</option>
+                <option value="in_progress">In Progress</option>
+                <option value="idle">Idle</option>
+                <option value="closed">Closed</option>
+                <option value="paid">Paid</option>
+                <option value="paused">Paused</option>
+              </select>
+              <button id="moveTabBtn">Move</button>
+              <button id="pauseChat" class="btn-danger">Pause Chat</button>
+              <button id="resumeChat" class="btn-ok">Resume Chat</button>
+              <button id="scrollLatest" type="button">Latest</button>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <div id="messages" class="messages"></div>
+          <form id="sendForm" style="margin-top:10px;">
+            <textarea id="adminMessage" rows="3" placeholder="Type a message and send as admin..."></textarea>
+            <button type="submit">Send Message</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <section class="tab-panel" data-tab-panel="ai">
+    <div class="sections">
+      <div class="section">
+        <h3>New AI OpenAI Learning</h3>
+        <div class="muted" style="margin-bottom:8px;">Use this section to immediately correct bot responses and set OpenAI behavior instructions for future replies.</div>
+        <form id="newOpenAiInstructionForm" style="margin-bottom:12px;">
+          <textarea id="newOpenAiInstruction" rows="3" placeholder="Instruction example: If fixed price is missing, use numeric UnitPricing from products CSV for fixed products." required></textarea>
+          <button type="submit">Save OpenAI Learning Instruction</button>
+        </form>
+        <div id="newOpenAiInstructionResult" class="mini"></div>
+        <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+        <h3>New AI Learning (Instant Correction)</h3>
+        <div class="muted" style="margin-bottom:8px;">When the bot answers incorrectly, add the customer question and the correct reply here. It is saved and applied immediately.</div>
+        <form id="newLearningForm">
+          <textarea id="newLearningQuestion" rows="2" placeholder="Customer question that was answered incorrectly" required></textarea>
+          <textarea id="newLearningReply" rows="3" placeholder="Correct response the bot must use from now on" required></textarea>
+          <label class="badge pill-toggle"><input id="newLearningOpenAIRewrite" type="checkbox"> Improve wording with OpenAI before saving</label>
+          <button type="submit">Save New AI Learning Rule</button>
+        </form>
+        <div id="newLearningResult" class="mini"></div>
+      </div>
+
+      <div class="section two legacy-ai">
+        <div>
+          <h3>Import WhatsApp Backups for Learning</h3>
+          <form id="backupForm">
+            <input id="trainerName" name="trainerName" type="text" placeholder="Your name in chat export (optional)">
+            <input id="backup" name="backup" type="file" accept=".txt,.csv,.json,.db,.crypt14,.crypt12,.crypt15" required>
+            <button type="submit">Upload and Import</button>
+          </form>
+          <div class="muted">Supports chat exports (.txt/.json/.csv) and WhatsApp DB backups (.db/.crypt14). For best training extraction from conversations, include your name in <em>trainerName</em>.</div>
+          <div id="backupResult" class="mini upload-status"></div>
+        </div>
+        <div>
+          <h3>Interactive AI Reply Coach</h3>
+          <div class="muted" style="margin-bottom:8px;">Ask for help planning the best response to a customer message. Then save the AI suggestion to teaching rules if you want.</div>
+          <div id="coachMessages" class="coach-box"></div>
+          <form id="coachForm">
+            <textarea id="coachPrompt" rows="3" placeholder="Example: Client says this quote is too expensive. How should I respond and keep the sale?" required></textarea>
+            <button type="submit">Ask AI Coach</button>
+          </form>
+          <div class="ai-stack">
+            <button id="saveCoachAsTeaching" type="button">Save Last Coach Reply to Teachings</button>
+            <button id="clearCoachChat" type="button">Clear Coach Chat</button>
+          </div>
+          <div id="coachResult" class="mini"></div>
+          <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+          <h3>Manual Teach AI Behavior</h3>
+          <form id="teachForm">
+            <textarea id="instruction" rows="4" placeholder="How OpenAI should respond..."></textarea>
+            <input id="teachTrigger" type="text" placeholder="Optional: Trigger phrase (e.g. delivery time)">
+            <textarea id="teachReply" rows="2" placeholder="Optional: Reply for that trigger"></textarea>
+            <button type="submit">Save Teaching</button>
+          </form>
+          <div id="teachResult" class="mini"></div>
+          <hr style="border-color:var(--line); border-width:1px 0 0; width:100%; margin:12px 0;">
+          <h3>Learn from Specific Chat</h3>
+          <div class="muted" style="margin-bottom:8px;">Select a conversation and let the AI learn user messages with the assistant replies from that chat.</div>
+          <form id="learnFromChatForm">
+            <select id="learnFromChatJid"></select>
+            <input id="learnFromChatPairs" type="number" min="5" max="200" value="80" placeholder="Max reply pairs">
+            <button type="submit">Learn Selected Chat</button>
+          </form>
+          <div id="learnFromChatResult" class="mini"></div>
+        </div>
+      </div>
+
+      <div class="section two">
+        <div>
+          <h3>Meta Legal Integration (Later)</h3>
+          <form id="metaForm">
+            <input id="businessAccountId" type="text" placeholder="Meta Business Account ID">
+            <input id="phoneNumberId" type="text" placeholder="Phone Number ID">
+            <textarea id="metaNotes" rows="3" placeholder="Legal onboarding notes"></textarea>
+            <button type="submit">Save Meta Option</button>
+          </form>
+          <div id="metaResult" class="mini"></div>
+        </div>
+        <div>
+          <h3>Learned Data Summary</h3>
+          <div class="mini">Backups: <strong id="backupCount">0</strong></div>
+          <div class="mini">Teachings: <strong id="teachingCount">0</strong></div>
+          <div class="mini">Rules: <strong id="ruleCount">0</strong></div>
+          <div class="mini">AI activity: <strong id="activityCount">0</strong></div>
+          <div class="mini">Meta saved: <strong id="metaSaved">No</strong></div>
+          <pre id="summaryPreview">[]</pre>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <section class="tab-panel" data-tab-panel="crm">
+    <div class="sections">
+      <div class="section two">
+        <div>
+          <h3>Contacts</h3>
+          <form id="contactAddForm">
+            <input id="contactName" type="text" placeholder="Contact name" required>
+            <input id="contactPhone" type="text" placeholder="Phone number or JID" required>
+            <button type="submit">Add / Update Contact</button>
+          </form>
+          <form id="contactImportForm">
+            <input id="contactImportFile" type="file" accept=".csv,.txt,.vcf" required>
+            <button type="submit">Import Contacts File</button>
+          </form>
+          <div id="contactsPanel" class="mini"></div>
+        </div>
+        <div>
+          <h3>Orders</h3>
+          <pre id="ordersPanel">[]</pre>
+          <h3>Leads (unanswered)</h3>
+          <pre id="leadsPanel">[]</pre>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <section class="tab-panel" data-tab-panel="products">
+    <div class="sections">
+      <div class="section two">
+        <div>
+          <h3>Products CSV (Catalog)</h3>
+          <form id="productsUploadForm">
+            <input id="productsCsvFile" type="file" accept=".csv,text/csv" required>
+            <button type="submit">Upload Products CSV</button>
+          </form>
+          <div class="row">
+            <button id="productsExportBtn" type="button">Export Current Products CSV</button>
+          </div>
+          <div id="productsResult" class="mini"></div>
+        </div>
+        <div>
+          <h3>Current Products Preview</h3>
+          <pre id="productsPreview">[]</pre>
+        </div>
+      </div>
+    </div>
+    </section>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const state = { activeJid: '', chats: [], coachHistory: [], lastCoachReply: '', activeTab: 'conversations' };
+    let autoRefreshTimer = null;
+
+    async function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      const token = el('apiToken').value.trim();
+      if (token) headers.set('x-admin-token', token);
+      const res = await fetch(url, { ...options, headers });
+      return res;
+    }
+
+    function updateQrLink() {
+      const token = el('apiToken').value.trim();
+      el('qrLink').href = token ? `/qr?token=${encodeURIComponent(token)}` : '/qr';
+    }
+
+    async function getJson(url, options = {}) {
+      const res = await apiFetch(url, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      return data;
+    }
+
+    function setTopMessage(msg) { el('topMessage').textContent = msg || ''; }
+
+    function switchTab(tabName) {
+      state.activeTab = tabName;
+      localStorage.setItem('dashboardActiveTab', tabName);
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-panel').forEach((panel) => {
+        panel.classList.toggle('active', panel.dataset.tabPanel === tabName);
+      });
+    }
+
+    async function refreshAllData() {
+      const results = await Promise.allSettled([
+        refreshDashboardState(),
+        refreshChats(),
+        refreshContacts(),
+        refreshOrdersAndLeads(),
+        refreshProductsPreview()
+      ]);
+      const failures = results.filter((r) => r.status === 'rejected');
+      let sectionError = '';
+      if (failures.length) {
+        sectionError = failures[0].reason?.message || 'Some sections failed to refresh.';
+        setTopMessage(sectionError);
+      }
+      try {
+        await refreshActiveChat();
+      } catch (e) {
+        const chatError = `Chat panel refresh warning: ${e.message}`;
+        setTopMessage(sectionError ? `${sectionError} | ${chatError}` : chatError);
+      }
+    }
+
+    function setAutoRefresh(enabled) {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      if (!enabled) return;
+      const ms = parseInt(el('autoRefreshInterval').value, 10) || 30000;
+      autoRefreshTimer = setInterval(async () => {
+        try {
+          await refreshAllData();
+          renderCoachMessages();
+        } catch (e) {
+          setTopMessage(`Auto refresh warning: ${e.message || 'refresh failed'}`);
+        }
+      }, ms);
+    }
+
+    function normalizePhoneDigits(raw) {
+      let digits = String(raw || '').replace(/[^\d]/g, '');
+      if (!digits) return '';
+      if (digits.startsWith('00') && digits.length > 2) digits = digits.slice(2);
+      if (digits.startsWith('0') && digits.length === 10) digits = `27${digits.slice(1)}`;
+      if (digits.length < 10 || digits.length > 12) return '';
+      return digits;
+    }
+
+    function phoneFromJid(jid) {
+      const value = String(jid || '').trim();
+      if (value.toLowerCase().endsWith('@lid')) return '';
+      const local = value.split('@')[0].split(':')[0];
+      const digits = normalizePhoneDigits(local);
+      return digits ? `+${digits}` : '';
+    }
+
+    function formatChatTitle(chat) {
+      const phone = chat.phone || phoneFromJid(chat.jid);
+      if (chat.name && phone) return `${chat.name} (${phone})`;
+      if (chat.name) return `${chat.name} (${chat.jid})`;
+      return phone || chat.jid;
+    }
+
+    function isStatusMessage(msg) {
+      const text = String(msg?.text || '').trim().toLowerCase();
+      if (!text) return true;
+      if (text === '[non-text message]') return true;
+      if (/^(status|state|connection)\s*:/.test(text)) return true;
+      if (/^(bot paused globally|bot resumed globally|chat .* paused|chat .* resumed)\b/.test(text)) return true;
+      return false;
+    }
+
+    function renderChats() {
+      const list = el('chatList');
+      list.innerHTML = '';
+      const term = el('chatSearch').value.trim().toLowerCase();
+      const filtered = !term ? state.chats : state.chats.filter((chat) => (
+        [chat.name, chat.phone, chat.jid, chat.lastMessage]
+          .map((x) => String(x || '').toLowerCase())
+          .some((x) => x.includes(term))
+      ));
+      for (const chat of filtered) {
+        const item = document.createElement('div');
+        item.className = `chat-item ${state.activeJid === chat.jid ? 'active' : ''}`;
+        const title = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = formatChatTitle(chat);
+        title.appendChild(strong);
+
+        const preview = document.createElement('div');
+        preview.className = 'mini';
+        preview.textContent = chat.lastMessage || '(no messages)';
+
+        const meta = document.createElement('div');
+        meta.className = 'mini';
+        meta.textContent = `${chat.lastTimestamp || ''} • ${chat.status || (chat.paused ? 'paused' : 'main')} • ${chat.messageCount || 0} msgs`;
+
+        item.appendChild(title);
+        item.appendChild(preview);
+        item.appendChild(meta);
+        item.onclick = () => selectChat(chat.jid);
+        list.appendChild(item);
+      }
+    }
+
+    function renderLearnFromChatOptions() {
+      const select = el('learnFromChatJid');
+      if (!select) return;
+      const previous = select.value || state.activeJid;
+      const options = state.chats || [];
+      select.innerHTML = '';
+      if (!options.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No chats available';
+        select.appendChild(opt);
+        return;
+      }
+      for (const chat of options) {
+        const opt = document.createElement('option');
+        opt.value = chat.jid;
+        const label = chat.name ? `${chat.name} (${chat.phone || chat.jid})` : (chat.phone || chat.jid);
+        opt.textContent = label;
+        select.appendChild(opt);
+      }
+      const preferred = options.find((chat) => chat.jid === previous) || options.find((chat) => chat.jid === state.activeJid) || options[0];
+      select.value = preferred?.jid || '';
+    }
+
+    function renderMessages(messages) {
+      const box = el('messages');
+      box.innerHTML = '';
+      const cleanMessages = (messages || []).filter((msg) => !isStatusMessage(msg));
+      for (const msg of cleanMessages) {
+        const div = document.createElement('div');
+        div.className = `msg ${msg.role || 'user'}`;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `${msg.role || 'user'} • ${msg.timestamp || ''}`;
+        const body = document.createElement('div');
+        body.textContent = msg.text || '';
+        div.appendChild(meta);
+        div.appendChild(body);
+        box.appendChild(div);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function renderCoachMessages() {
+      const box = el('coachMessages');
+      box.innerHTML = '';
+      if (!state.coachHistory.length) {
+        const empty = document.createElement('div');
+        empty.className = 'mini';
+        empty.textContent = 'No coach conversation yet. Ask a client-response question to begin.';
+        box.appendChild(empty);
+        return;
+      }
+      for (const msg of state.coachHistory) {
+        const item = document.createElement('div');
+        item.className = `coach-msg ${msg.role}`;
+        item.textContent = msg.content;
+        box.appendChild(item);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function refreshDashboardState() {
+      const data = await getJson('/api/dashboard/state');
+      el('botStatus').textContent = data.status;
+      el('openaiStatus').textContent = data.openai?.enabled ? `Enabled (${data.openai.model})` : 'Disabled';
+      el('globalPause').textContent = data.admin?.paused ? 'Yes' : 'No';
+      el('chatCount').textContent = String(data.admin?.chatCount || 0);
+      el('ordersCount').textContent = String(data.admin?.ordersCount || 0);
+      el('leadsCount').textContent = String(data.admin?.leadsCount || 0);
+      el('contactsCount').textContent = String(data.admin?.contactsCount || 0);
+
+      const learned = data.learned || {};
+      const backups = Array.isArray(learned.backups) ? learned.backups : [];
+      const teaching = Array.isArray(learned.teaching) ? learned.teaching : [];
+      const rules = Array.isArray(learned.responseRules) ? learned.responseRules : [];
+      const aiActivity = Array.isArray(learned.aiActivity) ? learned.aiActivity : [];
+      el('backupCount').textContent = String(backups.length);
+      el('teachingCount').textContent = String(teaching.length);
+      el('ruleCount').textContent = String(rules.length);
+      el('activityCount').textContent = String(aiActivity.length);
+      el('metaSaved').textContent = learned.metaConnection?.enabled ? 'Yes' : 'No';
+      el('summaryPreview').textContent = JSON.stringify({
+        backups: backups.slice(-3),
+        teaching: teaching.slice(-3).map((x) => ({ instruction: x.instruction, createdAt: x.createdAt })),
+        rules: rules.slice(0, 8),
+        activity: aiActivity.slice(-8)
+      }, null, 2);
+    }
+
+    async function refreshChats() {
+      const data = await getJson('/api/admin/chats');
+      state.chats = data.conversations || [];
+      renderChats();
+      renderLearnFromChatOptions();
+      if (!state.activeJid && state.chats.length) state.activeJid = state.chats[0].jid;
+    }
+
+    async function refreshActiveChat() {
+      if (!state.activeJid && state.chats.length) state.activeJid = state.chats[0].jid;
+      if (!state.activeJid) return;
+      await selectChat(state.activeJid, false);
+    }
+
+    async function selectChat(jid, rerenderList = true) {
+      state.activeJid = jid;
+      if (rerenderList) renderChats();
+      renderLearnFromChatOptions();
+      const data = await getJson(`/api/admin/chats/${encodeURIComponent(jid)}`);
+      const phone = data.phone || phoneFromJid(jid);
+      const heading = data.name ? `${data.name} (${phone || jid})` : (phone || jid);
+      el('activeTitle').textContent = `${heading} ${data.paused ? '(Paused)' : '(Active)'} • ${data.status || 'main'}`;
+      renderMessages(data.messages || []);
+    }
+
+    async function refreshContacts() {
+      const data = await getJson('/api/admin/contacts');
+      const contacts = data.contacts || [];
+      if (!contacts.length) {
+        el('contactsPanel').textContent = 'No contacts yet.';
+        return;
+      }
+      const rows = contacts.slice(0, 120).map((contact) => `${contact.name || '(no name)'} | ${contact.phone || phoneFromJid(contact.jid)} | ${contact.jid}`).join('\n');
+      el('contactsPanel').textContent = rows;
+    }
+
+    async function refreshOrdersAndLeads() {
+      const [ordersData, leadsData] = await Promise.all([
+        getJson('/api/admin/orders'),
+        getJson('/api/admin/leads')
+      ]);
+      el('ordersPanel').textContent = JSON.stringify((ordersData.orders || []).slice(0, 20), null, 2);
+      el('leadsPanel').textContent = JSON.stringify((leadsData.leads || []).slice(0, 20), null, 2);
+    }
+
+    async function refreshProductsPreview() {
+      try {
+        const data = await getJson('/api/admin/products');
+        const all = Array.isArray(data.products) ? data.products : [];
+        const rows = all.slice(0, 20);
+        el('productsPreview').textContent = JSON.stringify({ rows, totalRows: all.length }, null, 2);
+      } catch (e) {
+        el('productsPreview').textContent = JSON.stringify({ error: e.message }, null, 2);
+      }
+    }
+
+    async function postAction(url, body = {}) {
+      const data = await getJson(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      setTopMessage(data.message || 'Done');
+      await refreshDashboardState();
+      await refreshChats();
+      await refreshContacts();
+      await refreshOrdersAndLeads();
+      await refreshProductsPreview();
+    }
+
+    el('refreshAll').onclick = async () => {
+      try {
+        await refreshAllData();
+        setTopMessage('Refreshed');
+      } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('openaiCheckBtn').onclick = async () => {
+      const btn = el('openaiCheckBtn');
+      try {
+        btn.disabled = true;
+        el('openaiCheckResult').textContent = 'Testing OpenAI...';
+        const data = await getJson('/api/ai/openai-check');
+        if (!data.enabled) {
+          el('openaiCheckResult').textContent = data.error || 'OpenAI is not enabled.';
+        } else if (data.responding) {
+          el('openaiCheckResult').textContent = `OpenAI OK • Model: ${data.model} • Latency: ${data.latencyMs || 0}ms • Reply: ${data.reply || 'OPENAI_OK'}`;
+        } else {
+          el('openaiCheckResult').textContent = `OpenAI check failed • Model: ${data.model} • Error: ${data.error || data.reply || 'No valid response'}`;
+        }
+        await refreshDashboardState();
+      } catch (e) {
+        el('openaiCheckResult').textContent = e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    el('apiToken').addEventListener('input', updateQrLink);
+    el('chatSearch').addEventListener('input', renderChats);
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    el('autoRefreshToggle').addEventListener('change', () => setAutoRefresh(el('autoRefreshToggle').checked));
+    el('autoRefreshInterval').addEventListener('change', () => {
+      if (el('autoRefreshToggle').checked) setAutoRefresh(true);
+    });
+
+    el('pauseGlobal').onclick = async () => {
+      try { await postAction('/api/admin/pause'); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('resumeGlobal').onclick = async () => {
+      try { await postAction('/api/admin/resume'); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('logoutWhatsapp').onclick = async () => {
+      try { await postAction('/api/admin/whatsapp/logout'); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('moveTabBtn').onclick = async () => {
+      if (!state.activeJid) return setTopMessage('Select a chat first.');
+      try {
+        await postAction(`/api/admin/conversations/${encodeURIComponent(state.activeJid)}/move`, {
+          tab: el('moveTabSelect').value
+        });
+      } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('pauseChat').onclick = async () => {
+      if (!state.activeJid) return;
+      try { await postAction(`/api/admin/chats/${encodeURIComponent(state.activeJid)}/pause`); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('resumeChat').onclick = async () => {
+      if (!state.activeJid) return;
+      try { await postAction(`/api/admin/chats/${encodeURIComponent(state.activeJid)}/resume`); } catch (e) { setTopMessage(e.message); }
+    };
+
+    el('sendForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!state.activeJid) return setTopMessage('Select a chat first.');
+      const text = el('adminMessage').value.trim();
+      if (!text) return;
+      try {
+        await postAction('/api/admin/send', { jid: state.activeJid, text });
+        el('adminMessage').value = '';
+      } catch (e) { setTopMessage(e.message); }
+    });
+
+    const backupForm = el('backupForm');
+    if (backupForm) backupForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fileInput = el('backup');
+      const uploadButton = event.submitter || backupForm.querySelector('button[type="submit"]');
+      const selectedFile = fileInput?.files?.[0];
+      if (!selectedFile) {
+        el('backupResult').textContent = 'Please select a backup file before uploading.';
+        return;
+      }
+      try {
+        if (uploadButton) uploadButton.disabled = true;
+        el('backupResult').textContent = `Uploading "${selectedFile.name}"... Please wait.`;
+        const formData = new FormData();
+        formData.append('trainerName', el('trainerName').value.trim());
+        formData.append('backup', selectedFile);
+        const response = await apiFetch('/api/ai/upload-backup', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Upload failed');
+        const source = data.sourceType ? ` Source: ${data.sourceType}.` : '';
+        const imported = `Imported: ${data.importedRules} (rules: ${data.structuredRules || 0}, transcript: ${data.transcriptRules || 0}, json: ${data.jsonRules || 0}).`;
+        const note = data.note ? ` ${data.note}` : '';
+        el('backupResult').textContent = `${data.message} ${imported}${source}${note}`.trim();
+        fileInput.value = '';
+        await refreshDashboardState();
+      } catch (e) { el('backupResult').textContent = e.message; }
+      finally { if (uploadButton) uploadButton.disabled = false; }
+    });
+
+    const teachForm = el('teachForm');
+    if (teachForm) teachForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const instruction = el('instruction').value.trim();
+        const trigger = el('teachTrigger').value.trim();
+        const reply = el('teachReply').value.trim();
+        const data = await getJson('/api/ai/teach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction, trigger, reply, source: 'manual_dashboard' })
+        });
+        el('teachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
+        if (trigger && reply) {
+          el('teachTrigger').value = '';
+          el('teachReply').value = '';
+        }
+        await refreshDashboardState();
+      } catch (e) { el('teachResult').textContent = e.message; }
+    });
+
+    el('newLearningForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const question = el('newLearningQuestion').value.trim();
+        const correctedReply = el('newLearningReply').value.trim();
+        const improveWithOpenAI = el('newLearningOpenAIRewrite').checked;
+        const data = await getJson('/api/ai/new-learning', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, correctedReply, improveWithOpenAI })
+        });
+        el('newLearningResult').textContent = `${data.message} Rules: ${data.rules}. Removed old memory replies: ${data.removedMemories}.`;
+        el('newLearningQuestion').value = '';
+        el('newLearningReply').value = '';
+        el('newLearningOpenAIRewrite').checked = false;
+        await refreshDashboardState();
+      } catch (e) {
+        el('newLearningResult').textContent = e.message;
+      }
+    });
+
+    el('newOpenAiInstructionForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const instruction = el('newOpenAiInstruction').value.trim();
+        const data = await getJson('/api/ai/new-openai-learning/instruction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction })
+        });
+        el('newOpenAiInstructionResult').textContent = `${data.message} Teachings: ${data.teachings}.`;
+        el('newOpenAiInstruction').value = '';
+        await refreshDashboardState();
+      } catch (e) {
+        el('newOpenAiInstructionResult').textContent = e.message;
+      }
+    });
+
+    const learnFromChatForm = el('learnFromChatForm');
+    if (learnFromChatForm) learnFromChatForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const jid = el('learnFromChatJid').value;
+      const maxPairs = Number(el('learnFromChatPairs').value || 80);
+      if (!jid) {
+        el('learnFromChatResult').textContent = 'Please choose a chat first.';
+        return;
+      }
+      try {
+        const data = await getJson('/api/ai/learn-from-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jid, maxPairs, source: 'manual_selected_chat' })
+        });
+        el('learnFromChatResult').textContent = `${data.message} Rules processed: ${data.importedRules}. Updated: ${data.updates}.`;
+        await refreshDashboardState();
+      } catch (e) {
+        el('learnFromChatResult').textContent = e.message;
+      }
+    });
+
+    el('coachForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const message = el('coachPrompt').value.trim();
+      if (!message) return;
+      try {
+        state.coachHistory.push({ role: 'user', content: message });
+        renderCoachMessages();
+        const data = await getJson('/api/ai/coach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, history: state.coachHistory.slice(0, -1) })
+        });
+        const reply = String(data.reply || '').trim();
+        if (reply) {
+          state.coachHistory.push({ role: 'assistant', content: reply });
+          state.lastCoachReply = reply;
+        }
+        renderCoachMessages();
+        el('coachPrompt').value = '';
+        el('coachResult').textContent = data.message || 'Coach response ready.';
+      } catch (e) {
+        el('coachResult').textContent = e.message;
+      }
+    });
+
+    el('saveCoachAsTeaching').addEventListener('click', async () => {
+      if (!state.lastCoachReply) {
+        el('coachResult').textContent = 'No coach reply available yet.';
+        return;
+      }
+      try {
+        const lastUser = [...state.coachHistory].reverse().find((entry) => entry.role === 'user')?.content || '';
+        const data = await getJson('/api/ai/teach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instruction: state.lastCoachReply,
+            trigger: lastUser,
+            reply: state.lastCoachReply,
+            source: 'interactive_coach'
+          })
+        });
+        el('coachResult').textContent = `${data.message} Total teachings: ${data.teachings}`;
+        await refreshDashboardState();
+      } catch (e) {
+        el('coachResult').textContent = e.message;
+      }
+    });
+    el('clearCoachChat').addEventListener('click', () => {
+      state.coachHistory = [];
+      state.lastCoachReply = '';
+      renderCoachMessages();
+      el('coachResult').textContent = 'Coach chat cleared.';
+    });
+
+    el('metaForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const data = await getJson('/api/meta/connect-later', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessAccountId: el('businessAccountId').value.trim(),
+            phoneNumberId: el('phoneNumberId').value.trim(),
+            notes: el('metaNotes').value.trim()
+          })
+        });
+        el('metaResult').textContent = data.message;
+        await refreshDashboardState();
+      } catch (e) { el('metaResult').textContent = e.message; }
+    });
+
+    el('contactAddForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await postAction('/api/admin/contacts', {
+          name: el('contactName').value.trim(),
+          phone: el('contactPhone').value.trim()
+        });
+        el('contactName').value = '';
+        el('contactPhone').value = '';
+      } catch (e) { setTopMessage(e.message); }
+    });
+
+    el('contactImportForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const file = el('contactImportFile').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiFetch('/api/admin/contacts/import', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Import failed');
+        setTopMessage(`${data.message} (${data.imported})`);
+        await refreshContacts();
+      } catch (e) { setTopMessage(e.message); }
+    });
+
+    el('productsUploadForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const file = el('productsCsvFile').files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await apiFetch('/api/admin/products/upload', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Products upload failed');
+        el('productsResult').textContent = `${data.message} Products loaded: ${data.products}`;
+        await refreshProductsPreview();
+      } catch (e) {
+        el('productsResult').textContent = e.message;
+      }
+    });
+
+    el('productsExportBtn').addEventListener('click', async () => {
+      try {
+        const response = await apiFetch('/api/admin/products/export');
+        if (!response.ok) throw new Error('Products export failed');
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = 'products.csv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+      } catch (e) {
+        el('productsResult').textContent = e.message;
+      }
+    });
+    el('scrollLatest').addEventListener('click', () => {
+      const box = el('messages');
+      box.scrollTop = box.scrollHeight;
+    });
+
+    (async () => {
+      try {
+        const savedTab = localStorage.getItem('dashboardActiveTab');
+        const allowedTabs = new Set(['conversations', 'ai', 'crm', 'products']);
+        if (savedTab && allowedTabs.has(savedTab)) switchTab(savedTab);
+        updateQrLink();
+        await refreshAllData();
+        renderCoachMessages();
+      } catch (e) {
+        setTopMessage(e.message.includes('Unauthorized') ? 'Unauthorized. Enter ADMIN_API_TOKEN.' : e.message);
+      }
+    })();
+  </script>
+</body>
+</html>

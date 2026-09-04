@@ -1,0 +1,5 @@
+node_modules/
+storage/auth_info/
+storage/backups/
+storage/bot-qr.png
+storage/*.json
