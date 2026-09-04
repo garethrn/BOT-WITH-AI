@@ -383,7 +383,7 @@
       if (!digits) return '';
       if (digits.startsWith('00') && digits.length > 2) digits = digits.slice(2);
       if (digits.startsWith('0') && digits.length === 10) digits = `27${digits.slice(1)}`;
-      if (digits.length < 7 || digits.length > 15) return '';
+      if (digits.length < 10 || digits.length > 12) return '';
       return digits;
     }
 
@@ -683,10 +683,11 @@
       } catch (e) { setTopMessage(e.message); }
     });
 
-    el('backupForm').addEventListener('submit', async (event) => {
+    const backupForm = el('backupForm');
+    if (backupForm) backupForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const fileInput = el('backup');
-      const uploadButton = event.submitter || el('backupForm').querySelector('button[type="submit"]');
+      const uploadButton = event.submitter || backupForm.querySelector('button[type="submit"]');
       const selectedFile = fileInput?.files?.[0];
       if (!selectedFile) {
         el('backupResult').textContent = 'Please select a backup file before uploading.';
@@ -711,7 +712,8 @@
       finally { if (uploadButton) uploadButton.disabled = false; }
     });
 
-    el('teachForm').addEventListener('submit', async (event) => {
+    const teachForm = el('teachForm');
+    if (teachForm) teachForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       try {
         const instruction = el('instruction').value.trim();
@@ -769,7 +771,8 @@
       }
     });
 
-    el('learnFromChatForm').addEventListener('submit', async (event) => {
+    const learnFromChatForm = el('learnFromChatForm');
+    if (learnFromChatForm) learnFromChatForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const jid = el('learnFromChatJid').value;
       const maxPairs = Number(el('learnFromChatPairs').value || 80);
@@ -918,7 +921,7 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-        URL.revokeObjectURL(downloadUrl);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
       } catch (e) {
         el('productsResult').textContent = e.message;
       }
@@ -931,7 +934,8 @@
     (async () => {
       try {
         const savedTab = localStorage.getItem('dashboardActiveTab');
-        if (savedTab) switchTab(savedTab);
+        const allowedTabs = new Set(['conversations', 'ai', 'crm', 'products']);
+        if (savedTab && allowedTabs.has(savedTab)) switchTab(savedTab);
         updateQrLink();
         await refreshAllData();
         renderCoachMessages();

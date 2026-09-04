@@ -60,6 +60,14 @@ test('buildCsvPricingReply handles corex board requests with csv pricing', async
     assert.doesNotMatch(reply, /\$xx|\$\s*x+/i);
 });
 
+test('buildCsvPricingReply handles correx typo requests with csv pricing', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('correx board single sided 600x800 qty 1');
+    assert.ok(reply);
+    assert.match(reply, /Estimated total: R200\.00/i);
+    assert.doesNotMatch(reply, /\$xx|\$\s*x+/i);
+});
+
 test('buildCsvPricingReply suggests closest catalog size when dimensions are not exact', async () => {
     await pricing.loadProducts();
     const reply = pricing.buildCsvPricingReply('quote qty 1 vinyl cut stickers standard single colors size 1150x100');

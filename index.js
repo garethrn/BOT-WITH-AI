@@ -353,7 +353,7 @@ function normalizeContactPhone(raw) {
     if (!digits) return '';
     if (digits.startsWith('00') && digits.length > 2) digits = digits.slice(2);
     if (digits.startsWith('0') && digits.length === 10) return `27${digits.slice(1)}`;
-    if (digits.length >= 7 && digits.length <= 15) return digits;
+    if (digits.length >= 10 && digits.length <= 12) return digits;
     return '';
 }
 
@@ -369,6 +369,11 @@ function normalizeConversationJid(rawJid) {
 function extractPhoneDigitsFromJid(jid) {
     const value = String(jid || '').trim();
     if (!value) return '';
+    if (value.includes('@')) {
+        const domain = String(value.split('@')[1] || '').toLowerCase();
+        if (domain === 'lid') return '';
+        if (domain !== 's.whatsapp.net' && domain !== 'c.us') return '';
+    }
     const [localPart = ''] = value.split('@');
     const digitsPart = localPart.split(':')[0];
     return normalizeContactPhone(digitsPart);
@@ -591,7 +596,12 @@ const FINISH_KEYWORD_PATTERNS = [
 ];
 
 function normalizeTextForMatch(value) {
-    return String(value || '').toLowerCase().replace(/[^a-z0-9\sx]/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value || '')
+        .toLowerCase()
+        .replace(/\bcorrex\b/g, 'corex')
+        .replace(/[^a-z0-9\sx]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 function parseQuantityFromText(text = '', dimensions = null) {
@@ -674,6 +684,9 @@ function scoreProductVariant(product, request) {
     for (const token of request.tokens) {
         if (normalizedName.includes(token)) score += 3;
         if (normalizeTextForMatch(product.Name).includes(token)) score += 2;
+    }
+    if (request.tokens.includes('corex')) {
+        score += normalizedName.includes('corex') ? 16 : -8;
     }
 
     if (request.side) score += normalizedSide.includes(request.side) ? 8 : -5;
@@ -1684,6 +1697,16 @@ async function startBot(fingerprintIndex = 0) {
                         delete userCarts[jid];
                         await sendTrackedMessage(jid, `✅ Order confirmed.\nTotal: *${formatCurrency(total)}*\nA team member will follow up shortly.`);
                     } else {
+                        if (isPricingIntentMessage(text)) {
+                            const csvPricingReply = buildCsvPricingReply(text, jid);
+                            if (csvPricingReply) {
+                                quoteConversationState.delete(jid);
+                                await sendTrackedMessage(jid, csvPricingReply);
+                                rememberConversationReply(text, csvPricingReply);
+                                continue;
+                            }
+                        }
+
                         const strictLearnedReply = getPriorityTaughtReply(text);
                         if (strictLearnedReply) {
                             quoteConversationState.delete(jid);
@@ -1704,15 +1727,6 @@ async function startBot(fingerprintIndex = 0) {
                         if (quoteFlow.handled && quoteFlow.reply) {
                             await sendTrackedMessage(jid, quoteFlow.reply);
                             continue;
-                        }
-
-                        if (isPricingIntentMessage(text)) {
-                            const csvPricingReply = buildCsvPricingReply(text, jid);
-                            if (csvPricingReply) {
-                                await sendTrackedMessage(jid, csvPricingReply);
-                                rememberConversationReply(text, csvPricingReply);
-                                continue;
-                            }
                         }
 
                         const openAIReply = await generateOpenAIReply(text, jid);
