@@ -149,10 +149,18 @@ function getFixedPricingRule(product = {}) {
     };
 }
 
+function resolveFixedCatalogPrice(product = {}) {
+    const fixed = toNumber(product.FixedPrice);
+    if (fixed > 0) return fixed;
+    const unit = toNumber(product.UnitPricing);
+    if (unit > 0) return unit;
+    return 0;
+}
+
 function calculateFixedPrice(product, qty) {
     const pricingRule = getFixedPricingRule(product);
     const unitsPerPack = pricingRule.unitsPerPack;
-    const packPrice = toNumber(product.FixedPrice) > 0 ? toNumber(product.FixedPrice) : toNumber(product.UnitPricing);
+    const packPrice = resolveFixedCatalogPrice(product);
     if (pricingRule.pricingMode === 'unit') {
         if (pricingRule.minQty > 0 && qty < pricingRule.minQty) {
             return { total: Number.NaN, unitsPerPack: 1, packs: 0, pricingMode: 'unit', minQty: pricingRule.minQty };
@@ -177,7 +185,7 @@ function getProductDisplayPrice(product) {
         return `${formatCurrency(product.PricePerSqm)}/m²${minText}`;
     }
     const pricingRule = getFixedPricingRule(product);
-    const fixedPrice = toNumber(product.FixedPrice) > 0 ? toNumber(product.FixedPrice) : toNumber(product.UnitPricing);
+    const fixedPrice = resolveFixedCatalogPrice(product);
     if (pricingRule.pricingMode === 'unit') {
         const minText = pricingRule.minQty > 0 ? ` (min qty ${pricingRule.minQty})` : '';
         return `${formatCurrency(fixedPrice)}/unit${minText}`;
@@ -190,6 +198,11 @@ function getProductDisplayPrice(product) {
 function buildProductLine(product, index) {
     const name = product.Name || product.Subcategory || product.Category || `Product ${index + 1}`;
     return `${index + 1}. [${product.ID || '?'}] ${name} — ${getProductDisplayPrice(product)}`;
+}
+
+function isPricingIntentMessage(text = '') {
+    return /\b(price|pricing|quote|cost|how much|unit price|sqm|square meter|m2)\b/i.test(text)
+        || /\b(business cards?|flyers?|banners?|signs?|stickers?|labels?|posters?|acm|printing?)\b/i.test(text);
 }
 
 function convertDimensionToMm(value, unit) {
@@ -762,7 +775,7 @@ function buildProductContextForAI(userText = '', jid = '') {
         const name = product.Name || product.Subcategory || product.Category || 'Product';
         const pricing = String(product.PriceType || '').toLowerCase() === 'sqm'
             ? `${formatCurrency(product.PricePerSqm)}/m²${toNumber(product.MinPrice) > 0 ? ` (min ${formatCurrency(product.MinPrice)})` : ''}`
-            : `${formatCurrency(product.FixedPrice)} per ${parseUnitsPerProduct(product.UnitsPerProduct) > 1 ? `${parseUnitsPerProduct(product.UnitsPerProduct)} units` : 'unit'}`;
+            : `${formatCurrency(resolveFixedCatalogPrice(product))} per ${parseUnitsPerProduct(product.UnitsPerProduct) > 1 ? `${parseUnitsPerProduct(product.UnitsPerProduct)} units` : 'unit'}`;
         const options = [
             product.ID ? `id: ${product.ID}` : '',
             product.SKU ? `sku: ${product.SKU}` : '',
@@ -923,7 +936,7 @@ function selectProductsByQuantityTier(productsToFilter, requestedQty) {
 }
 
 function buildCsvPricingReply(text = '', jid = '') {
-    const pricingIntent = /\b(price|pricing|quote|cost|how much|need|want|print|banner|sign|card|sticker|label|flyer|poster|invoice)\b/i.test(text);
+    const pricingIntent = isPricingIntentMessage(text);
     if (!pricingIntent) return null;
 
     const request = parseProductRequestDetails(text);
@@ -1674,6 +1687,15 @@ async function startBot(fingerprintIndex = 0) {
                         if (quoteFlow.handled && quoteFlow.reply) {
                             await sendTrackedMessage(jid, quoteFlow.reply);
                             continue;
+                        }
+
+                        if (isPricingIntentMessage(text)) {
+                            const csvPricingReply = buildCsvPricingReply(text, jid);
+                            if (csvPricingReply) {
+                                await sendTrackedMessage(jid, csvPricingReply);
+                                rememberConversationReply(text, csvPricingReply);
+                                continue;
+                            }
                         }
 
                         const openAIReply = await generateOpenAIReply(text, jid);

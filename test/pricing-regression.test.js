@@ -43,6 +43,14 @@ test('buildCsvPricingReply does not fall through to OpenAI-style null for pricin
     assert.match(reply, /products catalog|please share quantity/i);
 });
 
+test('buildCsvPricingReply never returns dollar placeholder pricing', async () => {
+    await pricing.loadProducts();
+    const reply = pricing.buildCsvPricingReply('please quote 500 business cards laminated double sided');
+    assert.ok(reply);
+    assert.doesNotMatch(reply, /\$xx|\$\d|\$\s*\w+/i);
+    assert.match(reply, /R\d+/i);
+});
+
 test('buildCsvPricingReply suggests closest catalog size when dimensions are not exact', async () => {
     await pricing.loadProducts();
     const reply = pricing.buildCsvPricingReply('quote qty 1 vinyl cut stickers standard single colors size 1150x100');
