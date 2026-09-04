@@ -32,6 +32,10 @@ test('rememberConversationRoute keeps deliverable route and resolveOutboundJid u
     assert.equal(app.resolveOutboundJid(conversationJid), '120363400000111111@lid');
 });
 
+test('isDirectUserJid keeps lid conversations eligible for dashboard listing', () => {
+    assert.equal(app.isDirectUserJid('120363400000111111@lid'), true);
+});
+
 test('resolveIncomingJid maps lid-only inbound route back to canonical conversation number', () => {
     const conversationJid = '27715550000@s.whatsapp.net';
     const lidRoute = '120363499999111111@lid';

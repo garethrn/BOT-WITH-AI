@@ -391,7 +391,6 @@ function phoneFromJid(jid) {
 function isDirectUserJid(jid) {
     if (typeof jid !== 'string' || !jid.includes('@')) return false;
     if (isIgnoredChatJid(jid)) return false;
-    if (jid.endsWith('@lid')) return Boolean(extractPhoneDigitsFromJid(jid));
     return true;
 }
 
@@ -421,13 +420,13 @@ function resolveIncomingJid(key) {
     const participantDigits = extractPhoneDigitsFromJid(normalizedParticipant);
     if (primaryDigits) return `${primaryDigits}@s.whatsapp.net`;
     if (participantDigits) return `${participantDigits}@s.whatsapp.net`;
-    if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
     if (normalizedPrimary.endsWith('@lid')) {
         for (const [conversationJid, routeJid] of conversationRouteMap.entries()) {
             if (routeJid !== normalizedPrimary) continue;
             if (extractPhoneDigitsFromJid(conversationJid)) return conversationJid;
         }
     }
+    if (isDirectUserJid(normalizedPrimary)) return normalizedPrimary;
     if (isDirectUserJid(normalizedParticipant)) return normalizedParticipant;
     return normalizeConversationJid(primary || participant || '');
 }
@@ -2216,6 +2215,7 @@ module.exports = {
     resolveIncomingJid,
     resolveOutboundJid,
     rememberConversationRoute,
+    isDirectUserJid,
     getConversationSummaries,
     buildGreetingReply,
     buildProductContextForAI,
