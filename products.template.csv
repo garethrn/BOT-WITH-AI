@@ -1,0 +1,7 @@
+ID,SKU,Category,Subcategory,SubSubcategory,SubSubSubcategory,Name,Size,Finish,SingleOrDoubleSided,UnitsPerProduct,PriceType,PricePerSqm,FixedPrice,MinPrice,DesignFee,PolesAvailable,PolePrice,InstallationFee,RequiresArtwork,Aliases,MinOrderQty,UnitPricing
+1001,PP-T001,Paper Printing,Business Cards,,,Business Cards 300GSM,Standard 90x55mm,Laminated,Single sided,500,fixed,,R600.00,,120,no,,0,yes,business cards;name cards,,pack
+1002,PP-T002,Paper Printing,Business Cards,,,Business Cards 300GSM,Standard 90x55mm,Laminated,Double sided,500,fixed,,R775.00,,120,no,,0,yes,business cards;name cards,,pack
+1003,LBL-T003,Label Printing,Vinyl Labels,,,Premium Vinyl Labels 160 Micron Waterproof,Custom,Self Adhesive - Laminated,Single sided,1,sqm,180,,100,120,no,,0,yes,vinyl labels;waterproof labels,,sqm
+1004,OS-T004,Outdoor Signs,ACM Signs,,,ACM - Aluminium Bond sheets 3mm thick,1225 x 612mm,Gloss laminate,Single sided,1,fixed,,R525.00,,0,yes,500,500,yes,acm sign;outdoor signage,,pack
+1005,OS-T005,Outdoor Signs,ACM Signs,,,ACM - Aluminium Bond sheets 3mm thick,Custom,Gloss laminate,Single sided,1,sqm,650,,0,0,yes,0,750,yes,acm custom sign;outdoor signage,,sqm
+1006,PP-T006,Paper Printing,Bookmarks,,,Bookmarks,190 x 60mm,300 GSM,Single sided,>50,fixed,,R3.00,,120,no,,0,yes,bookmark printing,50,unit
