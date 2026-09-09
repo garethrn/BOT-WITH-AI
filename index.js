@@ -63,6 +63,7 @@ const CONTACT_PHONES_FILE = path.join(STORAGE_DIR, 'contact_phones.json');
 const CONVERSATION_TABS_FILE = path.join(STORAGE_DIR, 'conversation_tabs.json');
 const CONVERSATION_ROUTES_FILE = path.join(STORAGE_DIR, 'conversation_routes.json');
 const MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 1000;
+const ROUTE_PERSIST_DEBOUNCE_MS = 1500;
 
 if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -95,6 +96,8 @@ let contactNames = {};
 let contactPhones = {};
 let conversationTabOverrides = {};
 let conversationRouteOverrides = {};
+let routePersistTimer = null;
+let routePersistDirty = false;
 
 function loadJsonFile(filePath, fallbackValue) {
     try {
@@ -108,6 +111,23 @@ function loadJsonFile(filePath, fallbackValue) {
 
 function saveJsonFile(filePath, value) {
     fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+function scheduleConversationRoutesSave() {
+    routePersistDirty = true;
+    if (routePersistTimer) return;
+    routePersistTimer = setTimeout(() => {
+        routePersistTimer = null;
+        if (!routePersistDirty) return;
+        routePersistDirty = false;
+        saveJsonFile(CONVERSATION_ROUTES_FILE, conversationRouteOverrides);
+    }, ROUTE_PERSIST_DEBOUNCE_MS);
+}
+
+function flushConversationRoutesSave() {
+    if (!routePersistDirty) return;
+    routePersistDirty = false;
+    saveJsonFile(CONVERSATION_ROUTES_FILE, conversationRouteOverrides);
 }
 
 function toNumber(value, fallback = 0) {
@@ -244,6 +264,7 @@ for (const [conversationJid, routeJid] of Object.entries(conversationRouteOverri
     if (!conversationJid || !routeJid) continue;
     conversationRouteMap.set(String(conversationJid), String(routeJid));
 }
+process.on('beforeExit', flushConversationRoutesSave);
 
 function getRetryDelay(count) {
     const safeCount = Math.max(1, Number(count) || 1);
@@ -455,9 +476,11 @@ function rememberConversationRoute(conversationJid, ...routeCandidates) {
     for (const candidate of routeCandidates) {
         const route = String(candidate || '').trim();
         if (!isRouteEligibleJid(route)) continue;
+        const existing = conversationRouteMap.get(normalizedConversationJid);
+        if (existing === route) return;
         conversationRouteMap.set(normalizedConversationJid, route);
         conversationRouteOverrides[normalizedConversationJid] = route;
-        saveJsonFile(CONVERSATION_ROUTES_FILE, conversationRouteOverrides);
+        scheduleConversationRoutesSave();
         return;
     }
 }
@@ -1254,12 +1277,12 @@ async function extractQuoteRequestWithOpenAI(userText, jid = '') {
 
     for (const model of getOpenAIModelCandidates()) {
         try {
-            const completion = await openaiClient.chat.completions.create({
+            const completion = await withTimeout(openaiClient.chat.completions.create({
                 model,
                 messages,
                 max_tokens: 260,
                 temperature: 0
-            });
+            }), 7000, 'OpenAI extraction timeout');
             const reply = String(completion.choices?.[0]?.message?.content || '').trim();
             const parsed = parseJsonFromOpenAIText(reply);
             if (!parsed || typeof parsed !== 'object') continue;
@@ -1319,12 +1342,12 @@ async function generateOpenAIReply(userText, jid = '') {
         let lastError = '';
         for (const model of getOpenAIModelCandidates()) {
             try {
-                const completion = await openaiClient.chat.completions.create({
+                const completion = await withTimeout(openaiClient.chat.completions.create({
                     model,
                     messages: baseMessages,
                     max_tokens: 360,
                     temperature: 0.2
-                });
+                }), 9000, 'OpenAI reply timeout');
                 const reply = completion.choices?.[0]?.message?.content
                     ? String(completion.choices[0].message.content).trim()
                     : '';
