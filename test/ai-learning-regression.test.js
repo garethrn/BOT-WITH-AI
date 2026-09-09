@@ -160,6 +160,19 @@ test('buildOpenAISystemPrompt truncates oversized stored examples', { concurrenc
     }
 });
 
+test('buildOpenAISystemPrompt includes four core behavior rules', { concurrency: false }, () => {
+    const { module: learning, filePath } = createLearningModule();
+    try {
+        const prompt = learning.buildOpenAISystemPrompt();
+        assert.match(prompt, /Talk naturally like a helpful human sales assistant/i);
+        assert.match(prompt, /Ask one question at a time/i);
+        assert.match(prompt, /rely only on the Products CSV context/i);
+        assert.match(prompt, /Never guess products or pricing/i);
+    } finally {
+        cleanup(filePath);
+    }
+});
+
 test('learnFromChatMessages imports from selected chat and updates existing rules', { concurrency: false }, () => {
     const { module: learning, filePath } = createLearningModule();
     try {

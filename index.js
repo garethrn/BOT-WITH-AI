@@ -1001,7 +1001,7 @@ function buildCsvPricingReply(text = '', jid = '') {
     }
     const topScore = ranked[0].score;
     let candidatePool = ranked.filter((item) => item.score >= Math.max(1, topScore - 3)).map((item) => item.product);
-    const activeFocus = inferActiveCatalogFocus(jid, text);
+    const activeFocus = inferCatalogFocusFromText(text);
     if (activeFocus) {
         const focusMatchedPool = candidatePool.filter((product) => {
             const category = String(product.Category || '').trim().toLowerCase();
